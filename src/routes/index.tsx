@@ -370,7 +370,7 @@ function GameView({
     <div>
       <CelebrationAnimation play={allCorrect} />
 
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex items-center justify-end gap-3">
         <div className="flex w-64 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
           <span
             style={{ fontFamily: '"Avenir Next", "Helvetica Neue", Arial, sans-serif' }}
