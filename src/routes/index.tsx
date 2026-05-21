@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import lottie from "lottie-web/build/player/lottie_light";
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -11,6 +12,8 @@ import {
   RotateCcw,
   Square,
 } from "lucide-react";
+import confettiAnimation from "@/assets/confetti-full-screen.json";
+import defaultTreeImage from "@/assets/default-tree.png";
 import victorySound from "@/assets/victory.mp3";
 
 export const Route = createFileRoute("/")({
@@ -24,8 +27,16 @@ const STORAGE_KEY = "tree-match-pairs-v1";
 const IMAGE_KEY = "tree-match-image-v1";
 const TITLE_KEY = "tree-match-title-v1";
 const TIMER_KEY = "tree-match-timer-v1";
+const TIMER_DEFAULT_VERSION_KEY = "tree-match-timer-default-version";
+const TIMER_DEFAULT_VERSION = "2";
 const DEFAULT_TITLE = "Tree Match Master";
-const DEFAULT_TIMER: TimerSettings = { minutes: 1, seconds: 0 };
+const DEFAULT_TIMER: TimerSettings = { minutes: 2, seconds: 0 };
+const DEFAULT_IMAGE = defaultTreeImage;
+const CELEBRATION_EXTRA_SECONDS = 0.5;
+const CELEBRATION_BASE_SECONDS =
+  (confettiAnimation.op - confettiAnimation.ip) / confettiAnimation.fr;
+const CELEBRATION_PLAYBACK_SPEED =
+  CELEBRATION_BASE_SECONDS / (CELEBRATION_BASE_SECONDS + CELEBRATION_EXTRA_SECONDS);
 
 type AudioContextWindow = Window &
   typeof globalThis & {
@@ -72,12 +83,12 @@ const DEFAULT_PAIRS: Pair[] = [
 ];
 
 function useImage() {
-  const [image, setImage] = useState<string | null>(null);
+  const [image, setImage] = useState<string | null>(DEFAULT_IMAGE);
   const loaded = useRef(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(IMAGE_KEY);
-      if (raw) setImage(raw);
+      setImage(raw || DEFAULT_IMAGE);
     } catch (error) {
       void error;
     }
@@ -86,7 +97,7 @@ function useImage() {
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      if (image) localStorage.setItem(IMAGE_KEY, image);
+      if (image && image !== DEFAULT_IMAGE) localStorage.setItem(IMAGE_KEY, image);
       else localStorage.removeItem(IMAGE_KEY);
     } catch (error) {
       void error;
@@ -101,7 +112,14 @@ function useTimerSettings() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(TIMER_KEY);
-      if (raw) setTimerSettings(normalizeTimerSettings(JSON.parse(raw)));
+      const defaultVersion = localStorage.getItem(TIMER_DEFAULT_VERSION_KEY);
+      if (raw) {
+        const saved = normalizeTimerSettings(JSON.parse(raw));
+        const isOldDefault =
+          defaultVersion !== TIMER_DEFAULT_VERSION && saved.minutes === 1 && saved.seconds === 0;
+        setTimerSettings(isOldDefault ? DEFAULT_TIMER : saved);
+      }
+      localStorage.setItem(TIMER_DEFAULT_VERSION_KEY, TIMER_DEFAULT_VERSION);
     } catch (error) {
       void error;
     }
@@ -111,6 +129,7 @@ function useTimerSettings() {
     if (!loaded.current) return;
     try {
       localStorage.setItem(TIMER_KEY, JSON.stringify(timerSettings));
+      localStorage.setItem(TIMER_DEFAULT_VERSION_KEY, TIMER_DEFAULT_VERSION);
     } catch (error) {
       void error;
     }
@@ -180,7 +199,7 @@ function Index() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#fcf9f2" }}>
       <header className="border-b bg-white/70 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-6 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1>
               <button
@@ -217,7 +236,7 @@ function Index() {
           </nav>
         </div>
       </header>
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-4">
         {tab === "home" ? (
           <GameView pairs={pairs} image={image} timerSettings={timerSettings} />
         ) : (
@@ -349,9 +368,14 @@ function GameView({
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex w-32 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
-          <span className="block min-w-[68px] text-center font-mono text-xl font-bold tabular-nums text-red-600">
+      <CelebrationAnimation play={allCorrect} />
+
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex w-64 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
+          <span
+            style={{ fontFamily: '"Avenir Next", "Helvetica Neue", Arial, sans-serif' }}
+            className="block min-w-[68px] text-center text-xl font-semibold tabular-nums text-red-600"
+          >
             {formatTime(remainingSeconds)}
           </span>
         </div>
@@ -415,6 +439,37 @@ function GameView({
           Reset
         </button>
       </div>
+    </div>
+  );
+}
+
+function CelebrationAnimation({ play }: { play: boolean }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!play || !containerRef.current) return;
+
+    const animation = lottie.loadAnimation({
+      animationData: confettiAnimation,
+      autoplay: false,
+      container: containerRef.current,
+      loop: false,
+      renderer: "svg",
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid slice",
+      },
+    });
+    animation.setSpeed(CELEBRATION_PLAYBACK_SPEED);
+    animation.play();
+
+    return () => animation.destroy();
+  }, [play]);
+
+  if (!play) return null;
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden" aria-hidden="true">
+      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 }
@@ -604,7 +659,7 @@ function SettingsView({
       <div className="bg-white rounded-xl border p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Reference image</h2>
         <p className="text-sm text-slate-500 mb-4">
-          Upload the image shown on the home page. Players match yellow tiles to its features.
+          Upload the image shown on the home page. Recommended: 840×1080 px.
         </p>
         <div className="flex items-center gap-4">
           <div className="w-32 h-32 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center overflow-hidden bg-slate-50">
@@ -624,12 +679,12 @@ function SettingsView({
                 onChange={(e) => onUpload(e.target.files?.[0])}
               />
             </label>
-            {image && (
+            {image && image !== DEFAULT_IMAGE && (
               <button
-                onClick={() => setImage(null)}
+                onClick={() => setImage(DEFAULT_IMAGE)}
                 className="text-xs text-slate-500 hover:text-red-600 w-fit"
               >
-                Remove image
+                Use default image
               </button>
             )}
           </div>
