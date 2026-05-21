@@ -17,7 +17,7 @@ export default defineConfig({
     base: githubPagesBase,
   },
   tanstackStart: {
-    prerender: { enabled: true },
+    prerender: { enabled: isGitHubPagesBuild },
     server: { entry: "server" },
   },
 });

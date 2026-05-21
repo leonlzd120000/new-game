@@ -182,7 +182,15 @@ function Index() {
       <header className="border-b bg-white/70 backdrop-blur">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-slate-800">{title || DEFAULT_TITLE}</h1>
+            <h1>
+              <button
+                type="button"
+                onClick={() => setTab("home")}
+                className="rounded-sm text-left text-lg font-bold text-slate-800 transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+              >
+                {title || DEFAULT_TITLE}
+              </button>
+            </h1>
           </div>
           <nav className="flex gap-1 bg-slate-100 p-1 rounded-lg">
             <button
