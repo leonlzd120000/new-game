@@ -350,8 +350,8 @@ function GameView({
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <div className="rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
-          <span className="block min-w-[68px] text-left font-mono text-xl font-bold tabular-nums text-red-600">
+        <div className="flex w-32 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
+          <span className="block min-w-[68px] text-center font-mono text-xl font-bold tabular-nums text-red-600">
             {formatTime(remainingSeconds)}
           </span>
         </div>
