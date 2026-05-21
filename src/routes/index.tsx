@@ -348,9 +348,13 @@ function GameView({
 
   return (
     <div>
-      <div className="mb-6 flex justify-end">
+      <div className="mb-6 flex items-center justify-between">
+        <div className="rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
+          <span className="block min-w-[68px] text-left font-mono text-xl font-bold tabular-nums text-red-600">
+            {formatTime(remainingSeconds)}
+          </span>
+        </div>
         <TimerControls
-          remainingSeconds={remainingSeconds}
           timerRunning={timerRunning}
           canStart={timerDurationSeconds > 0 && remainingSeconds > 0}
           onStart={() => setTimerRunning(true)}
@@ -415,14 +419,12 @@ function GameView({
 }
 
 function TimerControls({
-  remainingSeconds,
   timerRunning,
   canStart,
   onStart,
   onStop,
   onReset,
 }: {
-  remainingSeconds: number;
   timerRunning: boolean;
   canStart: boolean;
   onStart: () => void;
@@ -431,9 +433,6 @@ function TimerControls({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2 rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
-      <span className="min-w-[68px] text-right font-mono text-xl font-bold tabular-nums text-red-600">
-        {formatTime(remainingSeconds)}
-      </span>
       <button
         type="button"
         onClick={onStart}
