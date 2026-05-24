@@ -31,10 +31,10 @@ type SpeechScoreResult = {
   feedback: string;
   tone: SpeechScoreTone;
 };
-type TranscriptWordTone = "correct" | "wrong" | "neutral";
-type TranscriptWordToken = {
+type SentenceWordTone = "correct" | "wrong" | "neutral";
+type SentenceWordToken = {
   text: string;
-  tone: TranscriptWordTone;
+  tone: SentenceWordTone;
 };
 type SpeechRecognitionAlternativeLike = {
   confidence?: number;
@@ -558,12 +558,8 @@ function getSpeechWords(value: string) {
   return normalized ? normalized.split(" ") : [];
 }
 
-function getTranscriptWordTokens(
-  targetSentence: string,
-  transcript: string,
-): TranscriptWordToken[] {
-  const targetWords = getSpeechWords(targetSentence);
-  const transcriptTokens = transcript
+function getSentenceWordTokens(targetSentence: string, transcript: string): SentenceWordToken[] {
+  const targetTokens = targetSentence
     .trim()
     .split(/\s+/)
     .filter(Boolean)
@@ -571,14 +567,18 @@ function getTranscriptWordTokens(
       normalized: normalizeSpeechText(text),
       text,
     }));
+  const transcriptWords = getSpeechWords(transcript);
 
-  if (transcriptTokens.length === 0) return [];
-  if (targetWords.length === 0) {
-    return transcriptTokens.map((token) => ({ text: token.text, tone: "neutral" }));
+  if (targetTokens.length === 0) return [];
+  if (transcriptWords.length === 0) {
+    return targetTokens.map((token) => ({
+      text: token.text,
+      tone: token.normalized ? "wrong" : "neutral",
+    }));
   }
 
-  const rowCount = targetWords.length + 1;
-  const columnCount = transcriptTokens.length + 1;
+  const rowCount = targetTokens.length + 1;
+  const columnCount = transcriptWords.length + 1;
   const distance = Array.from({ length: rowCount }, () => Array<number>(columnCount).fill(0));
 
   for (let row = 0; row < rowCount; row++) distance[row][0] = row;
@@ -586,7 +586,7 @@ function getTranscriptWordTokens(
 
   for (let row = 1; row < rowCount; row++) {
     for (let column = 1; column < columnCount; column++) {
-      const cost = targetWords[row - 1] === transcriptTokens[column - 1].normalized ? 0 : 1;
+      const cost = targetTokens[row - 1].normalized === transcriptWords[column - 1] ? 0 : 1;
       distance[row][column] = Math.min(
         distance[row - 1][column] + 1,
         distance[row][column - 1] + 1,
@@ -595,18 +595,18 @@ function getTranscriptWordTokens(
     }
   }
 
-  const tones: TranscriptWordTone[] = transcriptTokens.map((token) =>
+  const tones: SentenceWordTone[] = targetTokens.map((token) =>
     token.normalized ? "wrong" : "neutral",
   );
-  let row = targetWords.length;
-  let column = transcriptTokens.length;
+  let row = targetTokens.length;
+  let column = transcriptWords.length;
 
   while (row > 0 || column > 0) {
     if (row > 0 && column > 0) {
-      const isMatch = targetWords[row - 1] === transcriptTokens[column - 1].normalized;
+      const isMatch = targetTokens[row - 1].normalized === transcriptWords[column - 1];
       const substitutionCost = isMatch ? 0 : 1;
       if (distance[row][column] === distance[row - 1][column - 1] + substitutionCost) {
-        tones[column - 1] = transcriptTokens[column - 1].normalized
+        tones[row - 1] = targetTokens[row - 1].normalized
           ? isMatch
             ? "correct"
             : "wrong"
@@ -617,14 +617,13 @@ function getTranscriptWordTokens(
       }
     }
     if (column > 0 && distance[row][column] === distance[row][column - 1] + 1) {
-      tones[column - 1] = transcriptTokens[column - 1].normalized ? "wrong" : "neutral";
       column--;
       continue;
     }
     row--;
   }
 
-  return transcriptTokens.map((token, index) => ({ text: token.text, tone: tones[index] }));
+  return targetTokens.map((token, index) => ({ text: token.text, tone: tones[index] }));
 }
 
 function wordEditDistance(source: string[], target: string[]) {
@@ -1052,7 +1051,7 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
         : scoreResult
           ? "Try again."
           : "";
-  const transcriptWordTokens = getTranscriptWordTokens(targetSentence, transcript);
+  const sentenceWordTokens = getSentenceWordTokens(targetSentence, transcript);
 
   return (
     <section className="mt-6">
@@ -1079,7 +1078,7 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">识别结果</p>
                 <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-base font-semibold">
-                  {transcriptWordTokens.map((token, index) => (
+                  {sentenceWordTokens.map((token, index) => (
                     <span
                       key={`${token.text}-${index}`}
                       className={
@@ -1098,7 +1097,7 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
             )}
             {scoreResult && (
               <div className={`rounded-xl border px-4 py-3 ${resultColorClass}`}>
-                <p className="text-2xl font-bold">{scoreResult.score} 分</p>
+                <p className="text-2xl font-bold">{resultLabel}</p>
                 <p className="mt-1 text-sm font-semibold">{scoreResult.feedback}</p>
               </div>
             )}
@@ -1107,13 +1106,6 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
                 {errorMessage}
               </div>
             )}
-          </div>
-        )}
-        {scoreResult && (
-          <div className="mt-7 flex justify-center">
-            <div className={`rounded-lg border px-6 py-3 text-lg font-bold ${resultColorClass}`}>
-              {resultLabel}
-            </div>
           </div>
         )}
       </div>
