@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   X,
+  Minus,
   Plus,
   Trash2,
   Home as HomeIcon,
@@ -11,6 +12,7 @@ import {
   Play,
   RotateCcw,
   Square,
+  Star,
   Lock,
   Mic,
   MicOff,
@@ -35,6 +37,11 @@ type SentenceWordTone = "correct" | "wrong" | "neutral";
 type SentenceWordToken = {
   text: string;
   tone: SentenceWordTone;
+};
+type GroupStarScore = {
+  id: string;
+  label: string;
+  stars: number;
 };
 type SpeechRecognitionAlternativeLike = {
   confidence?: number;
@@ -92,6 +99,7 @@ type WorkspaceConfig = {
   showAnswerTiles: boolean;
   showGameReset: boolean;
   showTargetSentence: boolean;
+  showGroupStars: boolean;
   labelBoxesClickable: boolean;
 };
 
@@ -100,6 +108,7 @@ const IMAGE_KEY = "tree-match-image-v1";
 const TITLE_KEY = "tree-match-title-v1";
 const TIMER_KEY = "tree-match-timer-v1";
 const TIMER_DEFAULT_VERSION_KEY = "tree-match-timer-default-version";
+const GROUP_STARS_KEY = "group-work-stars-v1";
 const MATCH_TIMER_DEFAULT_VERSION = "2";
 const SPEAK_TIMER_DEFAULT_VERSION = "3";
 const DEFAULT_TITLE = "Match";
@@ -149,6 +158,11 @@ const GROUP_WORK_LEGACY_SENTENCES = new Set([
   "The clever monkey jumps over the river branches.",
   "We must brush our teeth every morning.",
 ]);
+const DEFAULT_GROUP_STARS: GroupStarScore[] = [
+  { id: "group-1", label: "Group 1", stars: 0 },
+  { id: "group-2", label: "Group 2", stars: 0 },
+  { id: "group-3", label: "Group 3", stars: 0 },
+];
 
 const WORKSPACES: WorkspaceConfig[] = [
   {
@@ -169,6 +183,7 @@ const WORKSPACES: WorkspaceConfig[] = [
     showAnswerTiles: true,
     showGameReset: true,
     showTargetSentence: false,
+    showGroupStars: false,
     labelBoxesClickable: false,
   },
   {
@@ -191,6 +206,7 @@ const WORKSPACES: WorkspaceConfig[] = [
     showAnswerTiles: false,
     showGameReset: false,
     showTargetSentence: true,
+    showGroupStars: true,
     labelBoxesClickable: true,
   },
 ];
@@ -307,6 +323,60 @@ function useTimerSettings(
     }
   }, [defaultVersion, defaultVersionKey, isLoaded, storageKey, timerSettings]);
   return [timerSettings, setTimerSettings] as const;
+}
+
+function normalizeGroupStarScores(value: unknown): GroupStarScore[] {
+  const rawScores = Array.isArray(value) ? value : [];
+  return DEFAULT_GROUP_STARS.map((group, index) => {
+    const rawGroup = rawScores.find(
+      (item) =>
+        item && typeof item === "object" && (item as Partial<GroupStarScore>).id === group.id,
+    );
+    const fallbackGroup = rawScores[index];
+    const source =
+      rawGroup && typeof rawGroup === "object"
+        ? (rawGroup as Partial<GroupStarScore>)
+        : fallbackGroup && typeof fallbackGroup === "object"
+          ? (fallbackGroup as Partial<GroupStarScore>)
+          : {};
+    return {
+      ...group,
+      stars: Math.max(0, Math.min(99, Math.trunc(Number(source.stars) || 0))),
+    };
+  });
+}
+
+function useGroupStars(storageKey: string, enabled: boolean) {
+  const [groupStars, setGroupStars] = useState<GroupStarScore[]>(DEFAULT_GROUP_STARS);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setIsLoaded(false);
+      setGroupStars(DEFAULT_GROUP_STARS);
+      return;
+    }
+    setIsLoaded(false);
+    try {
+      const raw = localStorage.getItem(storageKey);
+      setGroupStars(raw ? normalizeGroupStarScores(JSON.parse(raw)) : DEFAULT_GROUP_STARS);
+    } catch (error) {
+      void error;
+      setGroupStars(DEFAULT_GROUP_STARS);
+    }
+    setIsLoaded(true);
+  }, [enabled, storageKey]);
+
+  useEffect(() => {
+    if (!enabled || !isLoaded) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(groupStars));
+    } catch (error) {
+      void error;
+    }
+  }, [enabled, groupStars, isLoaded, storageKey]);
+
+  return [groupStars, setGroupStars] as const;
 }
 
 function playTone(ok: boolean) {
@@ -476,6 +546,7 @@ function WorkspacePage({
             showAnswerTiles={workspace.showAnswerTiles}
             showGameReset={workspace.showGameReset}
             showTargetSentence={workspace.showTargetSentence}
+            showGroupStars={workspace.showGroupStars}
             labelBoxesClickable={workspace.labelBoxesClickable}
           />
         ) : (
@@ -687,6 +758,66 @@ function getSpeechRecognitionConstructor() {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 }
 
+function GroupStarsPanel({
+  groups,
+  onChange,
+}: {
+  groups: GroupStarScore[];
+  onChange: (groupId: string, change: number) => void;
+}) {
+  return (
+    <div className="grid w-52 shrink-0 grid-cols-3 overflow-hidden rounded-xl border-2 border-slate-700 bg-amber-50/40 shadow-sm">
+      {groups.map((group, index) => (
+        <div
+          key={group.id}
+          className={`flex min-h-full flex-col items-center justify-between px-2 py-3 text-center ${
+            index > 0 ? "border-l-2 border-slate-700" : ""
+          }`}
+        >
+          <div>
+            <p className="text-sm font-semibold leading-tight text-slate-800">
+              Group
+              <br />
+              {index + 1}
+            </p>
+            <div className="mt-2 flex flex-col items-center gap-2">
+              <div className="grid min-h-9 max-h-32 w-full grid-cols-1 place-items-center gap-1 overflow-y-auto rounded-lg bg-white/60 px-1 py-1">
+                {Array.from({ length: group.stars }, (_, starIndex) => (
+                  <Star
+                    key={`${group.id}-star-${starIndex}`}
+                    size={18}
+                    className="fill-amber-400 text-amber-400"
+                  />
+                ))}
+              </div>
+              <span className="text-2xl font-bold leading-none text-slate-900">{group.stars}</span>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onChange(group.id, -1)}
+              disabled={group.stars === 0}
+              aria-label={`Decrease ${group.label} stars`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-amber-200 bg-white text-slate-600 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange(group.id, 1)}
+              aria-label={`Increase ${group.label} stars`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-amber-300 bg-amber-100 text-amber-800 transition hover:bg-amber-200"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function GameView({
   pairs,
   image,
@@ -695,6 +826,7 @@ function GameView({
   showAnswerTiles,
   showGameReset,
   showTargetSentence,
+  showGroupStars,
   labelBoxesClickable,
 }: {
   pairs: Pair[];
@@ -704,6 +836,7 @@ function GameView({
   showAnswerTiles: boolean;
   showGameReset: boolean;
   showTargetSentence: boolean;
+  showGroupStars: boolean;
   labelBoxesClickable: boolean;
 }) {
   const [status, setStatus] = useState<Record<string, "correct" | "wrong" | undefined>>({});
@@ -714,6 +847,7 @@ function GameView({
   );
   const [draggingAnswer, setDraggingAnswer] = useState<string | null>(null);
   const [shuffled, setShuffled] = useState(() => pairs.map((p) => p.answer));
+  const [groupStars, setGroupStars] = useGroupStars(GROUP_STARS_KEY, showGroupStars);
   const timerDurationSeconds = timerSettings.minutes * 60 + timerSettings.seconds;
   const [remainingSeconds, setRemainingSeconds] = useState(timerDurationSeconds);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -798,6 +932,16 @@ function GameView({
     setSelectedPairId(pairId);
   };
 
+  const updateGroupStars = (groupId: string, change: number) => {
+    setGroupStars((current) =>
+      current.map((group) =>
+        group.id === groupId
+          ? { ...group, stars: Math.max(0, Math.min(99, group.stars + change)) }
+          : group,
+      ),
+    );
+  };
+
   const selectedSentence = pairs.find((pair) => pair.id === selectedPairId)?.label;
 
   if (pairs.length === 0) {
@@ -831,11 +975,17 @@ function GameView({
       </div>
 
       <div
-        className={`flex gap-8 bg-white/60 rounded-2xl p-6 border ${
-          showDropTargets ? "items-stretch" : "items-center"
-        }`}
+        className={`flex bg-white/60 rounded-2xl p-6 border ${
+          showGroupStars ? "gap-6" : "gap-8"
+        } ${showDropTargets || showGroupStars ? "items-stretch" : "items-center"}`}
       >
-        <div className={showDropTargets ? "flex items-stretch" : "flex w-56 shrink-0 items-center"}>
+        <div
+          className={
+            showDropTargets
+              ? "flex items-stretch"
+              : "flex w-56 shrink-0 items-center justify-center"
+          }
+        >
           {image ? (
             <img
               src={image}
@@ -862,7 +1012,9 @@ function GameView({
             const labelBoxClassName = `border-2 rounded-md px-4 font-bold text-slate-800 flex items-center transition ${labelColorClass} ${
               showDropTargets
                 ? "h-full w-[260px] md:w-[292px]"
-                : "min-h-16 w-full max-w-[560px] py-3 text-left leading-snug"
+                : `min-h-16 w-full py-3 text-left leading-snug ${
+                    showGroupStars ? "" : "max-w-[560px]"
+                  }`
             } ${
               labelBoxesClickable
                 ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
@@ -901,6 +1053,8 @@ function GameView({
             );
           })}
         </div>
+
+        {showGroupStars && <GroupStarsPanel groups={groupStars} onChange={updateGroupStars} />}
       </div>
 
       {showTargetSentence && selectedSentence && (
