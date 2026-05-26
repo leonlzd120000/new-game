@@ -856,6 +856,7 @@ function GameView({
   labelBoxesClickable: boolean;
 }) {
   const [status, setStatus] = useState<Record<string, "correct" | "wrong" | undefined>>({});
+  const [speakPassed, setSpeakPassed] = useState<Record<string, boolean>>({});
   const [used, setUsed] = useState<Record<string, boolean>>({});
   const [placed, setPlaced] = useState<Record<string, string>>({});
   const [selectedPairId, setSelectedPairId] = useState<string | null>(() =>
@@ -872,9 +873,12 @@ function GameView({
   const [timerRunning, setTimerRunning] = useState(false);
 
   const allCorrect = pairs.length > 0 && pairs.every((p) => status[p.id] === "correct");
+  const allSpeakPassed =
+    showTargetSentence && pairs.length > 0 && pairs.every((pair) => speakPassed[pair.id]);
 
   useEffect(() => {
     setShuffled(shuffleAnswers(pairs));
+    setSpeakPassed({});
     setSelectedPairId((current) => {
       const pairIds = new Set(pairs.map((pair) => pair.id));
       if (current && pairIds.has(current)) return current;
@@ -1016,6 +1020,10 @@ function GameView({
     setSelectedPairId(pairId);
   };
 
+  const updateSpeakResult = (pairId: string, passed: boolean) => {
+    setSpeakPassed((current) => ({ ...current, [pairId]: passed }));
+  };
+
   const updateGroupStars = (groupId: string, change: number) => {
     setGroupStars((current) =>
       current.map((group) =>
@@ -1038,7 +1046,7 @@ function GameView({
 
   return (
     <div>
-      <CelebrationAnimation play={allCorrect} />
+      <CelebrationAnimation play={allCorrect || allSpeakPassed} />
 
       <div className="mb-3 flex items-center justify-end gap-3">
         <div className="flex w-64 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
@@ -1152,7 +1160,14 @@ function GameView({
               {selectedSentence}
             </p>
           </section>
-          <SpeakingPracticePanel targetSentence={selectedSentence} />
+          <SpeakingPracticePanel
+            targetSentence={selectedSentence}
+            onResult={(tone) => {
+              if (selectedPairId) {
+                updateSpeakResult(selectedPairId, tone === "great" || tone === "pass");
+              }
+            }}
+          />
         </>
       )}
 
@@ -1198,7 +1213,13 @@ function GameView({
   );
 }
 
-function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
+function SpeakingPracticePanel({
+  targetSentence,
+  onResult,
+}: {
+  targetSentence: string;
+  onResult?: (tone: SpeechScoreTone) => void;
+}) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const correctAudioRef = useRef<HTMLAudioElement | null>(null);
   const resultAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1282,7 +1303,9 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
   const applyScore = (spokenText: string) => {
     const cleanTranscript = spokenText.trim();
     setTranscript(cleanTranscript);
-    setScoreResult(scoreSpeech(targetSentence, cleanTranscript));
+    const nextScoreResult = scoreSpeech(targetSentence, cleanTranscript);
+    setScoreResult(nextScoreResult);
+    onResult?.(nextScoreResult.tone);
   };
 
   const startRealScoring = () => {
