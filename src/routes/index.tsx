@@ -1200,7 +1200,9 @@ function GameView({
 
 function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const correctAudioRef = useRef<HTMLAudioElement | null>(null);
   const resultAudioRef = useRef<HTMLAudioElement | null>(null);
+  const tryAgainAudioRef = useRef<HTMLAudioElement | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [scoreResult, setScoreResult] = useState<SpeechScoreResult | null>(null);
@@ -1216,24 +1218,66 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
   }, [targetSentence]);
 
   useEffect(() => {
-    return () => recognitionRef.current?.abort();
+    correctAudioRef.current = new Audio(correctSound);
+    tryAgainAudioRef.current = new Audio(tryAgainSound);
+    correctAudioRef.current.preload = "auto";
+    tryAgainAudioRef.current.preload = "auto";
   }, []);
 
   useEffect(() => {
-    if (!scoreResult) return;
+    return () => {
+      recognitionRef.current?.abort();
+      correctAudioRef.current?.pause();
+      tryAgainAudioRef.current?.pause();
+    };
+  }, []);
 
-    resultAudioRef.current?.pause();
-    resultAudioRef.current = new Audio(
-      scoreResult.tone === "great" || scoreResult.tone === "pass"
-        ? correctSound
-        : tryAgainSound,
+  const resetAudio = useCallback((audio: HTMLAudioElement) => {
+    audio.pause();
+    try {
+      audio.currentTime = 0;
+    } catch (error) {
+      void error;
+    }
+  }, []);
+
+  const primeResultAudio = useCallback(() => {
+    const audios = [correctAudioRef.current, tryAgainAudioRef.current].filter(
+      (audio): audio is HTMLAudioElement => Boolean(audio),
     );
-    resultAudioRef.current.play().catch(() => {});
-  }, [scoreResult]);
+
+    audios.forEach((audio) => {
+      audio.muted = true;
+      void audio
+        .play()
+        .then(() => {
+          resetAudio(audio);
+          audio.muted = false;
+        })
+        .catch(() => {
+          audio.muted = false;
+        });
+    });
+  }, [resetAudio]);
+
+  const playResultAudio = useCallback(
+    (tone: SpeechScoreTone) => {
+      const audio =
+        tone === "great" || tone === "pass" ? correctAudioRef.current : tryAgainAudioRef.current;
+      if (!audio) return;
+
+      resultAudioRef.current?.pause();
+      resultAudioRef.current = audio;
+      resetAudio(audio);
+      audio.muted = false;
+      audio.play().catch(() => {});
+    },
+    [resetAudio],
+  );
 
   useEffect(() => {
-    return () => resultAudioRef.current?.pause();
-  }, []);
+    if (scoreResult) playResultAudio(scoreResult.tone);
+  }, [playResultAudio, scoreResult]);
 
   const applyScore = (spokenText: string) => {
     const cleanTranscript = spokenText.trim();
@@ -1246,6 +1290,8 @@ function SpeakingPracticePanel({ targetSentence }: { targetSentence: string }) {
       recognitionRef.current?.stop();
       return;
     }
+
+    primeResultAudio();
 
     const Recognition = getSpeechRecognitionConstructor();
     if (!Recognition) {
