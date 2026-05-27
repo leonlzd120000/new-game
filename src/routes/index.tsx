@@ -1033,6 +1033,8 @@ function GameView({
     if (speakCelebrationTimerRef.current) {
       window.clearTimeout(speakCelebrationTimerRef.current);
     }
+    const audio = new Audio(victorySound);
+    audio.play().catch(() => {});
     setSpeakCelebrating(false);
     window.setTimeout(() => setSpeakCelebrating(true), 0);
     speakCelebrationTimerRef.current = window.setTimeout(
