@@ -15,7 +15,6 @@ import {
   Star,
   Lock,
   Mic,
-  MicOff,
 } from "lucide-react";
 import confettiAnimation from "@/assets/confetti-full-screen.json";
 import correctSound from "@/assets/correct.wav";
@@ -199,7 +198,7 @@ const WORKSPACES: WorkspaceConfig[] = [
   {
     id: "group-work",
     label: "Speak",
-    defaultTitle: "Speak",
+    defaultTitle: "Let's speak",
     storageKey: "group-work-pairs-v1",
     imageKey: "group-work-image-v1",
     titleKey: "group-work-title-v1",
@@ -209,7 +208,11 @@ const WORKSPACES: WorkspaceConfig[] = [
     timerDefault: SPEAK_TIMER_DEFAULT,
     legacyTimerDefaults: [LEGACY_ONE_MINUTE_TIMER, MATCH_TIMER_DEFAULT],
     defaultPairs: GROUP_WORK_DEFAULT_PAIRS,
-    legacyTitleMap: { "Group Work": "Speak" },
+    legacyTitleMap: {
+      "Group Work": "Let's speak",
+      Speak: "Let's speak",
+      "Let's speak.": "Let's speak",
+    },
     pairsDefaultVersionKey: "group-work-pairs-default-version",
     pairsDefaultVersion: GROUP_WORK_PAIRS_DEFAULT_VERSION,
     showDropTargets: false,
@@ -806,7 +809,6 @@ function GroupStarsPanel({
                   />
                 ))}
               </div>
-              <span className="text-2xl font-bold leading-none text-slate-900">{group.stars}</span>
             </div>
           </div>
           <div className="mt-3 flex items-center gap-1">
@@ -1149,7 +1151,7 @@ function GameView({
               showDropTargets
                 ? "h-full w-[260px] md:w-[292px]"
                 : `min-h-16 w-full py-3 text-left leading-snug ${
-                    showGroupStars ? "" : "max-w-[560px]"
+                    showGroupStars ? "text-2xl" : "max-w-[560px]"
                   }`
             } ${
               labelBoxesClickable
@@ -1195,24 +1197,14 @@ function GameView({
       </div>
 
       {showTargetSentence && selectedSentence && (
-        <>
-          <section className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-8 py-3 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-              TARGET SENTENCE / 目标句子
-            </p>
-            <p className="mt-1 text-2xl font-bold leading-tight text-slate-900">
-              {selectedSentence}
-            </p>
-          </section>
-          <SpeakingPracticePanel
-            targetSentence={selectedSentence}
-            onResult={(tone) => {
-              if (selectedPairId) {
-                updateSpeakResult(selectedPairId, tone === "great" || tone === "pass");
-              }
-            }}
-          />
-        </>
+        <SpeakingPracticePanel
+          targetSentence={selectedSentence}
+          onResult={(tone) => {
+            if (selectedPairId) {
+              updateSpeakResult(selectedPairId, tone === "great" || tone === "pass");
+            }
+          }}
+        />
       )}
 
       {showAnswerTiles && (
@@ -1440,22 +1432,30 @@ function SpeakingPracticePanel({
 
   return (
     <section className="mt-4">
-      <div className="rounded-2xl border-2 border-indigo-100 bg-white px-8 py-4 text-center shadow-md">
-        <button
-          type="button"
-          onClick={startRealScoring}
-          className={`mx-auto inline-flex min-h-14 items-center justify-center gap-4 rounded-2xl px-10 text-xl font-bold text-white shadow-xl transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 ${
-            isListening
-              ? "bg-gradient-to-r from-red-500 to-pink-500"
-              : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-          }`}
-        >
-          <Mic size={28} />
-          {isListening ? "正在听...点击结束" : "I can read"}
-        </button>
-        <p className="mt-3 text-sm font-bold text-slate-400">
-          {isListening ? "正在听你朗读，读完后会自动打分。" : "Press to start"}
-        </p>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-8 py-3 shadow-sm">
+        <div className="grid items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
+          <div className="text-left">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+              TARGET SENTENCE / 目标句子
+            </p>
+            <p className="mt-1 text-2xl font-bold leading-tight text-slate-900">{targetSentence}</p>
+          </div>
+          <div className="justify-self-center text-center">
+            <button
+              type="button"
+              onClick={startRealScoring}
+              className={`inline-flex min-h-14 items-center justify-center gap-4 rounded-2xl px-10 text-xl font-bold text-white shadow-xl transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 ${
+                isListening
+                  ? "bg-gradient-to-r from-red-500 to-pink-500"
+                  : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+              }`}
+            >
+              <Mic size={28} />
+              {isListening ? "正在听...点击结束" : "I can read"}
+            </button>
+          </div>
+          <div aria-hidden="true" />
+        </div>
         {(transcript || scoreResult || errorMessage) && (
           <div className="mx-auto mt-6 max-w-3xl space-y-3 text-left">
             {transcript && (
@@ -1493,7 +1493,7 @@ function SpeakingPracticePanel({
           </div>
         )}
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-8 py-5 text-center">
+      <div className="mt-5 px-8 text-center">
         <p className="inline-flex items-center gap-2 text-lg font-bold text-slate-500">
           <Lock size={20} />
           智能提示：基础语音打分基于浏览器语音识别和文本相似度计算。
