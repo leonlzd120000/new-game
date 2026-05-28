@@ -1115,13 +1115,17 @@ function GameView({
       <div
         className={`flex bg-white/60 rounded-2xl p-6 border ${
           showGroupStars ? "gap-6" : "gap-8"
-        } ${showDropTargets || showGroupStars ? "items-stretch" : "items-center"}`}
+        } ${showDropTargets || showGroupStars ? "items-stretch" : "items-center"} ${
+          showGroupStars ? "h-[360px]" : ""
+        }`}
       >
         <div
           className={
             showDropTargets
               ? "flex items-stretch"
-              : "flex w-56 shrink-0 items-center justify-center"
+              : `flex w-56 shrink-0 justify-center ${
+                  showGroupStars ? "h-full items-stretch" : "items-center"
+                }`
           }
         >
           {image ? (
@@ -1131,11 +1135,17 @@ function GameView({
               className={`select-none pointer-events-none rounded-md ${
                 showDropTargets
                   ? "h-full w-auto object-contain"
-                  : "max-h-[360px] w-full object-contain"
+                  : showGroupStars
+                    ? "h-full w-full object-contain"
+                    : "max-h-[360px] w-full object-contain"
               }`}
             />
           ) : (
-            <div className="w-56 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center text-center text-xs text-slate-400 p-4">
+            <div
+              className={`w-56 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center text-center text-xs text-slate-400 p-4 ${
+                showGroupStars ? "h-full" : ""
+              }`}
+            >
               Upload an image in Settings to display it here.
             </div>
           )}
@@ -1151,7 +1161,7 @@ function GameView({
               showDropTargets
                 ? "h-full w-[260px] md:w-[292px]"
                 : `min-h-16 w-full py-3 text-left leading-snug ${
-                    showGroupStars ? "text-2xl" : "max-w-[560px]"
+                    showGroupStars ? "h-full text-2xl" : "max-w-[560px]"
                   }`
             } ${
               labelBoxesClickable
@@ -1162,7 +1172,9 @@ function GameView({
             return (
               <div
                 key={p.id}
-                className={`flex items-center gap-3 ${showDropTargets ? "flex-1" : ""}`}
+                className={`flex items-center gap-3 ${
+                  showDropTargets || showGroupStars ? "flex-1" : ""
+                }`}
               >
                 {labelBoxesClickable ? (
                   <button
