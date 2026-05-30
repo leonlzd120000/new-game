@@ -890,6 +890,7 @@ function GameView({
   const pointerDragRef = useRef<PointerAnswerDrag | null>(null);
   const [shuffled, setShuffled] = useState(() => pairs.map((p) => p.answer));
   const [groupStars, setGroupStars] = useGroupStars(groupStarsKey, showGroupStars);
+  const useBalancedMatchLayout = showDropTargets && showGroupStars;
   const timerDurationSeconds = timerSettings.minutes * 60 + timerSettings.seconds;
   const [remainingSeconds, setRemainingSeconds] = useState(timerDurationSeconds);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -1132,18 +1133,23 @@ function GameView({
       </div>
 
       <div
-        className={`flex bg-white/60 rounded-2xl p-6 border ${
-          showDropTargets && showGroupStars ? "gap-4" : showGroupStars ? "gap-6" : "gap-8"
-        } ${showDropTargets || showGroupStars ? "items-stretch" : "items-center"} ${
-          showGroupStars ? "h-[360px]" : ""
-        }`}
+        className={`${
+          useBalancedMatchLayout
+            ? "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch"
+            : `flex ${showDropTargets && showGroupStars ? "gap-4" : showGroupStars ? "gap-6" : "gap-8"} ${
+                showDropTargets || showGroupStars ? "items-stretch" : "items-center"
+              }`
+        } rounded-2xl border bg-white/60 p-6 ${showGroupStars ? "h-[360px]" : ""}`}
       >
+        {useBalancedMatchLayout && <div aria-hidden="true" />}
         <div
           className={
             showDropTargets
-              ? `flex h-full shrink-0 items-stretch justify-center ${
-                  showGroupStars ? "w-[280px]" : ""
-                }`
+              ? useBalancedMatchLayout
+                ? "flex h-[312px] shrink-0 items-stretch"
+                : `flex h-full shrink-0 items-stretch justify-center ${
+                    showGroupStars ? "w-[280px]" : ""
+                  }`
               : `flex w-56 shrink-0 justify-center ${
                   showGroupStars ? "h-full items-stretch" : "items-center"
                 }`
@@ -1172,7 +1178,11 @@ function GameView({
           )}
         </div>
 
-        <div className="flex-1 flex flex-col gap-3">
+        {useBalancedMatchLayout && <div aria-hidden="true" />}
+
+        <div
+          className={`${useBalancedMatchLayout ? "flex w-fit flex-col gap-3" : "flex-1 flex flex-col gap-3"}`}
+        >
           {pairs.map((p) => {
             const labelSelected = selectedPairId === p.id;
             const labelColorClass = labelSelected
@@ -1228,7 +1238,11 @@ function GameView({
           })}
         </div>
 
+        {useBalancedMatchLayout && <div aria-hidden="true" />}
+
         {showGroupStars && <GroupStarsPanel groups={groupStars} onChange={updateGroupStars} />}
+
+        {useBalancedMatchLayout && <div aria-hidden="true" />}
       </div>
 
       {showTargetSentence && selectedSentence && (
