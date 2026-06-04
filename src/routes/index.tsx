@@ -143,7 +143,7 @@ const SPEAK_TIMER_DEFAULT_VERSION = "3";
 const FOLLOW_PAIRS_DEFAULT_VERSION = "1";
 const DEFAULT_TITLE = "Match";
 const FOLLOW_DEFAULT_TITLE = "Follow";
-const DEFAULT_WORKSPACE_ID: WorkspaceConfig["id"] = "match-master";
+const DEFAULT_WORKSPACE_ID: WorkspaceConfig["id"] = "follow-work";
 const MATCH_TIMER_DEFAULT: TimerSettings = { minutes: 2, seconds: 0 };
 const SPEAK_TIMER_DEFAULT: TimerSettings = { minutes: 4, seconds: 0 };
 const LEGACY_ONE_MINUTE_TIMER: TimerSettings = { minutes: 1, seconds: 0 };
@@ -462,35 +462,17 @@ function usePairs(
 
 function Index() {
   const [tab, setTab] = useState<"home" | "settings">("home");
-  const [workspaceId, setWorkspaceId] = useState<WorkspaceConfig["id"]>(() => {
-    if (typeof window === "undefined") return DEFAULT_WORKSPACE_ID;
-    try {
-      const storedWorkspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY);
-      if (storedWorkspaceId && WORKSPACES.some((workspace) => workspace.id === storedWorkspaceId)) {
-        return storedWorkspaceId as WorkspaceConfig["id"];
-      }
-    } catch (error) {
-      void error;
-    }
-    return DEFAULT_WORKSPACE_ID;
-  });
+  const [workspaceId, setWorkspaceId] = useState<WorkspaceConfig["id"]>(DEFAULT_WORKSPACE_ID);
   const workspace = WORKSPACES.find((item) => item.id === workspaceId) ?? WORKSPACES[0];
 
   useEffect(() => {
     try {
       REMOVED_STORAGE_KEYS.forEach((storageKey) => localStorage.removeItem(storageKey));
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
     } catch (error) {
       void error;
     }
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
-    } catch (error) {
-      void error;
-    }
-  }, [workspaceId]);
 
   const selectWorkspace = (id: WorkspaceConfig["id"]) => {
     setWorkspaceId(id);
