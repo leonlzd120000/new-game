@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   X,
-  Minus,
   Plus,
   Trash2,
   Home as HomeIcon,
@@ -12,13 +11,17 @@ import {
   Play,
   RotateCcw,
   Square,
-  Star,
   Lock,
   Mic,
+  Volume2,
 } from "lucide-react";
 import confettiAnimation from "@/assets/confetti-full-screen.json";
 import correctSound from "@/assets/correct.wav";
 import defaultTreeImage from "@/assets/default-tree.png";
+import followBrushTeethAudio from "@/assets/follow-audio/brush-teeth.m4a";
+import followGetUpAudio from "@/assets/follow-audio/get-up.m4a";
+import followGoToSchoolAudio from "@/assets/follow-audio/go-to-school.m4a";
+import followWashFaceAudio from "@/assets/follow-audio/wash-face.m4a";
 import tryAgainSound from "@/assets/try-again.wav";
 import victorySound from "@/assets/victory.mp3";
 
@@ -38,11 +41,6 @@ type SentenceWordTone = "correct" | "wrong" | "neutral";
 type SentenceWordToken = {
   text: string;
   tone: SentenceWordTone;
-};
-type GroupStarScore = {
-  id: string;
-  label: string;
-  stars: number;
 };
 type PointerDragPreview = {
   answer: string;
@@ -88,12 +86,17 @@ type SpeechRecognitionWindow = Window &
     SpeechRecognition?: SpeechRecognitionConstructorLike;
     webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
   };
-type WorkspaceConfig = {
-  id: "match-master" | "group-work";
+type WorkspaceBaseConfig = {
+  id: "follow-work" | "match-master" | "order-work";
   label: string;
   defaultTitle: string;
+  view: "activity" | "placeholder";
+};
+type ActivityWorkspaceConfig = WorkspaceBaseConfig & {
+  view: "activity";
   storageKey: string;
-  imageKey: string;
+  imageKeys: readonly string[];
+  imageLayout: "single" | "row4";
   titleKey: string;
   timerKey: string;
   timerDefaultVersionKey: string;
@@ -107,22 +110,40 @@ type WorkspaceConfig = {
   showDropTargets: boolean;
   showAnswerTiles: boolean;
   showGameReset: boolean;
+  showPairBoard: boolean;
   showTargetSentence: boolean;
-  showGroupStars: boolean;
-  groupStarsKey: string;
   labelBoxesClickable: boolean;
 };
+type PlaceholderWorkspaceConfig = WorkspaceBaseConfig & {
+  view: "placeholder";
+  description: string;
+};
+type WorkspaceConfig = ActivityWorkspaceConfig | PlaceholderWorkspaceConfig;
 
 const STORAGE_KEY = "tree-match-pairs-v1";
 const IMAGE_KEY = "tree-match-image-v1";
 const TITLE_KEY = "tree-match-title-v1";
 const TIMER_KEY = "tree-match-timer-v1";
 const TIMER_DEFAULT_VERSION_KEY = "tree-match-timer-default-version";
-const MATCH_GROUP_STARS_KEY = "match-master-stars-v1";
-const SPEAK_GROUP_STARS_KEY = "group-work-stars-v1";
+const FOLLOW_STORAGE_KEY = "follow-match-pairs-v1";
+const FOLLOW_IMAGE_KEY = "follow-match-image-v1";
+const FOLLOW_IMAGE_KEYS = [
+  FOLLOW_IMAGE_KEY,
+  "follow-match-image-2-v1",
+  "follow-match-image-3-v1",
+  "follow-match-image-4-v1",
+] as const;
+const FOLLOW_TITLE_KEY = "follow-match-title-v1";
+const FOLLOW_TIMER_KEY = "follow-match-timer-v1";
+const FOLLOW_TIMER_DEFAULT_VERSION_KEY = "follow-match-timer-default-version";
+const FOLLOW_PAIRS_DEFAULT_VERSION_KEY = "follow-match-pairs-default-version";
+const WORKSPACE_STORAGE_KEY = "active-workspace-v1";
 const MATCH_TIMER_DEFAULT_VERSION = "2";
 const SPEAK_TIMER_DEFAULT_VERSION = "3";
+const FOLLOW_PAIRS_DEFAULT_VERSION = "1";
 const DEFAULT_TITLE = "Match";
+const FOLLOW_DEFAULT_TITLE = "Follow";
+const DEFAULT_WORKSPACE_ID: WorkspaceConfig["id"] = "match-master";
 const MATCH_TIMER_DEFAULT: TimerSettings = { minutes: 2, seconds: 0 };
 const SPEAK_TIMER_DEFAULT: TimerSettings = { minutes: 4, seconds: 0 };
 const LEGACY_ONE_MINUTE_TIMER: TimerSettings = { minutes: 1, seconds: 0 };
@@ -143,6 +164,19 @@ const DEFAULT_PAIRS: Pair[] = [
   { id: "4", label: "trunk", answer: "strong" },
   { id: "5", label: "roots", answer: "deep" },
 ];
+const MATCH_IMAGE_KEYS = [IMAGE_KEY] as const;
+const FOLLOW_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "Get up", answer: "get up" },
+  { id: "2", label: "Wash face", answer: "wash face" },
+  { id: "3", label: "Brush teeth", answer: "brush teeth" },
+  { id: "4", label: "Go to school", answer: "go to school" },
+];
+const FOLLOW_AUDIO_BY_LABEL: Record<string, string> = {
+  "get up": followGetUpAudio,
+  "wash face": followWashFaceAudio,
+  "brush teeth": followBrushTeethAudio,
+  "go to school": followGoToSchoolAudio,
+};
 const GROUP_WORK_PAIRS_DEFAULT_VERSION = "3";
 const GROUP_WORK_DEFAULT_PAIRS: Pair[] = [
   {
@@ -171,19 +205,47 @@ const GROUP_WORK_LEGACY_SENTENCES = new Set([
   "The clever monkey jumps over the river branches.",
   "We must brush our teeth every morning.",
 ]);
-const DEFAULT_GROUP_STARS: GroupStarScore[] = [
-  { id: "group-1", label: "Group 1", stars: 0 },
-  { id: "group-2", label: "Group 2", stars: 0 },
-  { id: "group-3", label: "Group 3", stars: 0 },
-];
+const REMOVED_STORAGE_KEYS = ["match-master-stars-v1", "group-work-stars-v1"] as const;
 
 const WORKSPACES: WorkspaceConfig[] = [
+  {
+    id: "follow-work",
+    label: "Follow",
+    defaultTitle: FOLLOW_DEFAULT_TITLE,
+    view: "activity",
+    storageKey: FOLLOW_STORAGE_KEY,
+    imageKeys: FOLLOW_IMAGE_KEYS,
+    imageLayout: "row4",
+    titleKey: FOLLOW_TITLE_KEY,
+    timerKey: FOLLOW_TIMER_KEY,
+    timerDefaultVersionKey: FOLLOW_TIMER_DEFAULT_VERSION_KEY,
+    timerDefaultVersion: MATCH_TIMER_DEFAULT_VERSION,
+    timerDefault: MATCH_TIMER_DEFAULT,
+    legacyTimerDefaults: [LEGACY_ONE_MINUTE_TIMER],
+    defaultPairs: FOLLOW_DEFAULT_PAIRS,
+    legacyTitleMap: {
+      "Group Work": "Follow",
+      Speak: "Follow",
+      "Let's speak": "Follow",
+      "Let's speak.": "Follow",
+    },
+    pairsDefaultVersionKey: FOLLOW_PAIRS_DEFAULT_VERSION_KEY,
+    pairsDefaultVersion: FOLLOW_PAIRS_DEFAULT_VERSION,
+    showDropTargets: true,
+    showAnswerTiles: false,
+    showGameReset: false,
+    showPairBoard: false,
+    showTargetSentence: false,
+    labelBoxesClickable: false,
+  },
   {
     id: "match-master",
     label: "Match",
     defaultTitle: DEFAULT_TITLE,
+    view: "activity",
     storageKey: STORAGE_KEY,
-    imageKey: IMAGE_KEY,
+    imageKeys: MATCH_IMAGE_KEYS,
+    imageLayout: "single",
     titleKey: TITLE_KEY,
     timerKey: TIMER_KEY,
     timerDefaultVersionKey: TIMER_DEFAULT_VERSION_KEY,
@@ -195,38 +257,17 @@ const WORKSPACES: WorkspaceConfig[] = [
     showDropTargets: true,
     showAnswerTiles: true,
     showGameReset: true,
+    showPairBoard: true,
     showTargetSentence: false,
-    showGroupStars: true,
-    groupStarsKey: MATCH_GROUP_STARS_KEY,
     labelBoxesClickable: false,
   },
   {
-    id: "group-work",
-    label: "Speak",
-    defaultTitle: "Let's speak",
-    storageKey: "group-work-pairs-v1",
-    imageKey: "group-work-image-v1",
-    titleKey: "group-work-title-v1",
-    timerKey: "group-work-timer-v1",
-    timerDefaultVersionKey: "group-work-timer-default-version",
-    timerDefaultVersion: SPEAK_TIMER_DEFAULT_VERSION,
-    timerDefault: SPEAK_TIMER_DEFAULT,
-    legacyTimerDefaults: [LEGACY_ONE_MINUTE_TIMER, MATCH_TIMER_DEFAULT],
-    defaultPairs: GROUP_WORK_DEFAULT_PAIRS,
-    legacyTitleMap: {
-      "Group Work": "Let's speak",
-      Speak: "Let's speak",
-      "Let's speak.": "Let's speak",
-    },
-    pairsDefaultVersionKey: "group-work-pairs-default-version",
-    pairsDefaultVersion: GROUP_WORK_PAIRS_DEFAULT_VERSION,
-    showDropTargets: false,
-    showAnswerTiles: false,
-    showGameReset: false,
-    showTargetSentence: true,
-    showGroupStars: true,
-    groupStarsKey: SPEAK_GROUP_STARS_KEY,
-    labelBoxesClickable: true,
+    id: "order-work",
+    label: "Order",
+    defaultTitle: "Order",
+    view: "placeholder",
+    description:
+      "Order mode is ready in the menu. Add the sequence or ordering interaction here when you want to build the third activity.",
   },
 ];
 
@@ -274,29 +315,35 @@ function useTitle(
   }, [isLoaded, storageKey, title]);
   return [title, setTitle] as const;
 }
-function useImage(storageKey: string) {
-  const [image, setImage] = useState<string | null>(DEFAULT_IMAGE);
+function useImages(storageKeys: readonly string[]) {
+  const [images, setImages] = useState<string[]>(() => storageKeys.map(() => DEFAULT_IMAGE));
   const [isLoaded, setIsLoaded] = useState(false);
+
   useEffect(() => {
     setIsLoaded(false);
     try {
-      const raw = localStorage.getItem(storageKey);
-      setImage(raw || DEFAULT_IMAGE);
+      setImages(storageKeys.map((storageKey) => localStorage.getItem(storageKey) || DEFAULT_IMAGE));
     } catch (error) {
       void error;
+      setImages(storageKeys.map(() => DEFAULT_IMAGE));
     }
     setIsLoaded(true);
-  }, [storageKey]);
+  }, [storageKeys]);
+
   useEffect(() => {
     if (!isLoaded) return;
     try {
-      if (image && image !== DEFAULT_IMAGE) localStorage.setItem(storageKey, image);
-      else localStorage.removeItem(storageKey);
+      storageKeys.forEach((storageKey, index) => {
+        const image = images[index] || DEFAULT_IMAGE;
+        if (image && image !== DEFAULT_IMAGE) localStorage.setItem(storageKey, image);
+        else localStorage.removeItem(storageKey);
+      });
     } catch (error) {
       void error;
     }
-  }, [image, isLoaded, storageKey]);
-  return [image, setImage] as const;
+  }, [images, isLoaded, storageKeys]);
+
+  return [images, setImages] as const;
 }
 
 function isSameTimer(a: TimerSettings, b: TimerSettings) {
@@ -342,60 +389,6 @@ function useTimerSettings(
     }
   }, [defaultVersion, defaultVersionKey, isLoaded, storageKey, timerSettings]);
   return [timerSettings, setTimerSettings] as const;
-}
-
-function normalizeGroupStarScores(value: unknown): GroupStarScore[] {
-  const rawScores = Array.isArray(value) ? value : [];
-  return DEFAULT_GROUP_STARS.map((group, index) => {
-    const rawGroup = rawScores.find(
-      (item) =>
-        item && typeof item === "object" && (item as Partial<GroupStarScore>).id === group.id,
-    );
-    const fallbackGroup = rawScores[index];
-    const source =
-      rawGroup && typeof rawGroup === "object"
-        ? (rawGroup as Partial<GroupStarScore>)
-        : fallbackGroup && typeof fallbackGroup === "object"
-          ? (fallbackGroup as Partial<GroupStarScore>)
-          : {};
-    return {
-      ...group,
-      stars: Math.max(0, Math.min(99, Math.trunc(Number(source.stars) || 0))),
-    };
-  });
-}
-
-function useGroupStars(storageKey: string, enabled: boolean) {
-  const [groupStars, setGroupStars] = useState<GroupStarScore[]>(DEFAULT_GROUP_STARS);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!enabled) {
-      setIsLoaded(false);
-      setGroupStars(DEFAULT_GROUP_STARS);
-      return;
-    }
-    setIsLoaded(false);
-    try {
-      const raw = localStorage.getItem(storageKey);
-      setGroupStars(raw ? normalizeGroupStarScores(JSON.parse(raw)) : DEFAULT_GROUP_STARS);
-    } catch (error) {
-      void error;
-      setGroupStars(DEFAULT_GROUP_STARS);
-    }
-    setIsLoaded(true);
-  }, [enabled, storageKey]);
-
-  useEffect(() => {
-    if (!enabled || !isLoaded) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(groupStars));
-    } catch (error) {
-      void error;
-    }
-  }, [enabled, groupStars, isLoaded, storageKey]);
-
-  return [groupStars, setGroupStars] as const;
 }
 
 function playTone(ok: boolean) {
@@ -469,8 +462,35 @@ function usePairs(
 
 function Index() {
   const [tab, setTab] = useState<"home" | "settings">("home");
-  const [workspaceId, setWorkspaceId] = useState<WorkspaceConfig["id"]>("match-master");
+  const [workspaceId, setWorkspaceId] = useState<WorkspaceConfig["id"]>(() => {
+    if (typeof window === "undefined") return DEFAULT_WORKSPACE_ID;
+    try {
+      const storedWorkspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+      if (storedWorkspaceId && WORKSPACES.some((workspace) => workspace.id === storedWorkspaceId)) {
+        return storedWorkspaceId as WorkspaceConfig["id"];
+      }
+    } catch (error) {
+      void error;
+    }
+    return DEFAULT_WORKSPACE_ID;
+  });
   const workspace = WORKSPACES.find((item) => item.id === workspaceId) ?? WORKSPACES[0];
+
+  useEffect(() => {
+    try {
+      REMOVED_STORAGE_KEYS.forEach((storageKey) => localStorage.removeItem(storageKey));
+    } catch (error) {
+      void error;
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
+    } catch (error) {
+      void error;
+    }
+  }, [workspaceId]);
 
   const selectWorkspace = (id: WorkspaceConfig["id"]) => {
     setWorkspaceId(id);
@@ -478,9 +498,11 @@ function Index() {
   };
 
   return (
-    <div className="min-h-screen pb-24" style={{ backgroundColor: "#fcf9f2" }}>
-      <WorkspacePage key={workspace.id} workspace={workspace} tab={tab} setTab={setTab} />
-      <BottomNavigation activeWorkspaceId={workspace.id} onSelectWorkspace={selectWorkspace} />
+    <div className="min-h-screen lg:flex" style={{ backgroundColor: "#fcf9f2" }}>
+      <WorkspaceMenu activeWorkspaceId={workspace.id} onSelectWorkspace={selectWorkspace} />
+      <div className="min-w-0 flex-1">
+        <WorkspacePage key={workspace.id} workspace={workspace} tab={tab} setTab={setTab} />
+      </div>
     </div>
   );
 }
@@ -494,13 +516,33 @@ function WorkspacePage({
   tab: "home" | "settings";
   setTab: React.Dispatch<React.SetStateAction<"home" | "settings">>;
 }) {
+  if (workspace.view === "placeholder") {
+    return (
+      <WorkspaceShell
+        title={workspace.defaultTitle}
+        defaultTitle={workspace.defaultTitle}
+        tab={tab}
+        setTab={setTab}
+      >
+        {tab === "home" ? (
+          <PlaceholderWorkspaceView
+            title={workspace.defaultTitle}
+            description={workspace.description}
+          />
+        ) : (
+          <PlaceholderSettingsView title={workspace.defaultTitle} />
+        )}
+      </WorkspaceShell>
+    );
+  }
+
   const [pairs, setPairs] = usePairs(
     workspace.storageKey,
     workspace.defaultPairs,
     workspace.pairsDefaultVersionKey,
     workspace.pairsDefaultVersion,
   );
-  const [image, setImage] = useImage(workspace.imageKey);
+  const [images, setImages] = useImages(workspace.imageKeys);
   const [title, setTitle] = useTitle(
     workspace.titleKey,
     workspace.defaultTitle,
@@ -514,11 +556,93 @@ function WorkspacePage({
     workspace.legacyTimerDefaults,
   );
 
+  useEffect(() => {
+    if (workspace.imageLayout !== "row4") return;
+
+    const targetCount = workspace.imageKeys.length;
+    setPairs((current) => {
+      const trimmed = current.slice(0, targetCount);
+      if (trimmed.length === targetCount) {
+        return current.length === targetCount ? current : trimmed;
+      }
+
+      const additions = Array.from({ length: targetCount - trimmed.length }, (_, index) => {
+        const fallbackPair = workspace.defaultPairs[trimmed.length + index];
+        return fallbackPair
+          ? { ...fallbackPair }
+          : {
+              id: `${workspace.id}-label-${trimmed.length + index + 1}`,
+              label: "",
+              answer: "",
+            };
+      });
+
+      return [...trimmed, ...additions];
+    });
+  }, [
+    setPairs,
+    workspace.defaultPairs,
+    workspace.id,
+    workspace.imageKeys.length,
+    workspace.imageLayout,
+  ]);
+
+  return (
+    <WorkspaceShell title={title} defaultTitle={workspace.defaultTitle} tab={tab} setTab={setTab}>
+      <>
+        {tab === "home" ? (
+          <GameView
+            key={workspace.id}
+            pairs={pairs}
+            images={images}
+            imageLayout={workspace.imageLayout}
+            timerSettings={timerSettings}
+            showDropTargets={workspace.showDropTargets}
+            showAnswerTiles={workspace.showAnswerTiles}
+            showGameReset={workspace.showGameReset}
+            showPairBoard={workspace.showPairBoard}
+            showTargetSentence={workspace.showTargetSentence}
+            labelBoxesClickable={workspace.labelBoxesClickable}
+          />
+        ) : (
+          <SettingsView
+            key={workspace.id}
+            pairs={pairs}
+            setPairs={setPairs}
+            images={images}
+            setImages={setImages}
+            imageLayout={workspace.imageLayout}
+            title={title}
+            setTitle={setTitle}
+            defaultTitle={workspace.defaultTitle}
+            timerSettings={timerSettings}
+            setTimerSettings={setTimerSettings}
+            showAnswerFields={workspace.showAnswerTiles}
+          />
+        )}
+      </>
+    </WorkspaceShell>
+  );
+}
+
+function WorkspaceShell({
+  title,
+  defaultTitle,
+  tab,
+  setTab,
+  children,
+}: {
+  title: string;
+  defaultTitle: string;
+  tab: "home" | "settings";
+  setTab: React.Dispatch<React.SetStateAction<"home" | "settings">>;
+  children: React.ReactNode;
+}) {
   return (
     <>
       <header className="border-b bg-white/70 backdrop-blur">
         <div
-          className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto flex items-center justify-between px-6 py-2`}
+          className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto flex flex-wrap items-center justify-between gap-3 px-6 py-3`}
         >
           <div className="flex items-center gap-2">
             <h1>
@@ -528,16 +652,16 @@ function WorkspacePage({
                 style={{ fontFamily: "Arial, sans-serif" }}
                 className="rounded-sm text-left text-lg font-bold text-slate-800 transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
               >
-                {title || workspace.defaultTitle}
+                {title || defaultTitle}
               </button>
             </h1>
           </div>
-          <nav className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+          <nav className="flex gap-1 rounded-lg bg-slate-100 p-1">
             <button
               onClick={() => setTab("home")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition ${
                 tab === "home"
-                  ? "bg-white shadow text-slate-900"
+                  ? "bg-white text-slate-900 shadow"
                   : "text-slate-600 hover:text-slate-800"
               }`}
             >
@@ -545,9 +669,9 @@ function WorkspacePage({
             </button>
             <button
               onClick={() => setTab("settings")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition ${
                 tab === "settings"
-                  ? "bg-white shadow text-slate-900"
+                  ? "bg-white text-slate-900 shadow"
                   : "text-slate-600 hover:text-slate-800"
               }`}
             >
@@ -556,42 +680,12 @@ function WorkspacePage({
           </nav>
         </div>
       </header>
-      <main className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto px-6 py-4`}>
-        {tab === "home" ? (
-          <GameView
-            key={workspace.id}
-            pairs={pairs}
-            image={image}
-            timerSettings={timerSettings}
-            showDropTargets={workspace.showDropTargets}
-            showAnswerTiles={workspace.showAnswerTiles}
-            showGameReset={workspace.showGameReset}
-            showTargetSentence={workspace.showTargetSentence}
-            showGroupStars={workspace.showGroupStars}
-            groupStarsKey={workspace.groupStarsKey}
-            labelBoxesClickable={workspace.labelBoxesClickable}
-          />
-        ) : (
-          <SettingsView
-            key={workspace.id}
-            pairs={pairs}
-            setPairs={setPairs}
-            image={image}
-            setImage={setImage}
-            title={title}
-            setTitle={setTitle}
-            defaultTitle={workspace.defaultTitle}
-            timerSettings={timerSettings}
-            setTimerSettings={setTimerSettings}
-            showAnswerFields={workspace.showAnswerTiles}
-          />
-        )}
-      </main>
+      <main className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto px-6 py-4`}>{children}</main>
     </>
   );
 }
 
-function BottomNavigation({
+function WorkspaceMenu({
   activeWorkspaceId,
   onSelectWorkspace,
 }: {
@@ -599,27 +693,61 @@ function BottomNavigation({
   onSelectWorkspace: (id: WorkspaceConfig["id"]) => void;
 }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
-      <div className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto flex gap-2 px-6 py-3`}>
-        {WORKSPACES.map((workspace) => {
-          const active = workspace.id === activeWorkspaceId;
-          return (
-            <button
-              key={workspace.id}
-              type="button"
-              onClick={() => onSelectWorkspace(workspace.id)}
-              className={`flex-1 rounded-md px-4 py-3 text-sm font-semibold transition ${
-                active
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-950"
-              }`}
-            >
-              {workspace.label}
-            </button>
-          );
-        })}
+    <aside className="border-b border-amber-100/80 bg-transparent lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r">
+      <div className="px-4 py-4 lg:px-4 lg:py-6">
+        <div className="rounded-[28px] border border-amber-100/80 bg-white/55 p-4 shadow-[0_12px_30px_rgba(148,101,24,0.06)] backdrop-blur-sm">
+          <nav className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {WORKSPACES.map((workspace) => {
+              const active = workspace.id === activeWorkspaceId;
+              return (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  onClick={() => onSelectWorkspace(workspace.id)}
+                  className={`rounded-[22px] border px-4 py-3 text-left text-sm font-semibold transition ${
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[0_12px_20px_rgba(15,23,42,0.14)]"
+                      : "border-amber-100 bg-white/80 text-slate-700 shadow-sm hover:border-amber-300 hover:bg-amber-50/80 hover:text-slate-950"
+                  }`}
+                >
+                  <span
+                    className={`block text-[11px] uppercase tracking-[0.24em] ${
+                      active ? "text-white/55" : "text-amber-700/60"
+                    }`}
+                  >
+                    {String(WORKSPACES.indexOf(workspace) + 1).padStart(2, "0")}
+                  </span>
+                  <span className="mt-1 block text-base">{workspace.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </div>
-    </nav>
+    </aside>
+  );
+}
+
+function PlaceholderWorkspaceView({ title, description }: { title: string; description: string }) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white/75 p-8 shadow-sm">
+      <div className="max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Activity</p>
+        <h2 className="mt-3 text-3xl font-bold text-slate-900">{title}</h2>
+        <p className="mt-4 text-base leading-7 text-slate-600">{description}</p>
+      </div>
+    </section>
+  );
+}
+
+function PlaceholderSettingsView({ title }: { title: string }) {
+  return (
+    <section className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-800">{title} settings</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-500">
+        This workspace is available in the menu, but it does not have editable settings yet.
+      </p>
+    </section>
   );
 }
 
@@ -786,94 +914,27 @@ function getSpeechRecognitionConstructor() {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 }
 
-function GroupStarsPanel({
-  groups,
-  onChange,
-  compact = false,
-}: {
-  groups: GroupStarScore[];
-  onChange: (groupId: string, change: number) => void;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={`grid shrink-0 grid-cols-3 overflow-hidden rounded-xl border-2 border-slate-700 bg-amber-50/40 shadow-sm ${
-        compact ? "w-40" : "w-52"
-      }`}
-    >
-      {groups.map((group, index) => (
-        <div
-          key={group.id}
-          className={`flex min-h-full flex-col items-center justify-between text-center ${
-            compact ? "px-1 py-2" : "px-2 py-3"
-          } ${index > 0 ? "border-l-2 border-slate-700" : ""}`}
-        >
-          <div>
-            <p
-              className={`${compact ? "text-xs" : "text-sm"} font-semibold leading-tight text-slate-800`}
-            >
-              Group
-              <br />
-              {index + 1}
-            </p>
-            <div className="mt-2 flex flex-col items-center gap-2">
-              <div className="grid min-h-9 max-h-32 w-full grid-cols-1 place-items-center gap-1 overflow-y-auto rounded-lg bg-white/60 px-1 py-1">
-                {Array.from({ length: group.stars }, (_, starIndex) => (
-                  <Star
-                    key={`${group.id}-star-${starIndex}`}
-                    size={18}
-                    className="fill-amber-400 text-amber-400"
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onChange(group.id, -1)}
-              disabled={group.stars === 0}
-              aria-label={`Decrease ${group.label} stars`}
-              className={`${compact ? "h-6 w-6" : "h-7 w-7"} inline-flex items-center justify-center rounded-md border border-amber-200 bg-white text-slate-600 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40`}
-            >
-              <Minus size={compact ? 12 : 14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange(group.id, 1)}
-              aria-label={`Increase ${group.label} stars`}
-              className={`${compact ? "h-6 w-6" : "h-7 w-7"} inline-flex items-center justify-center rounded-md border border-amber-300 bg-amber-100 text-amber-800 transition hover:bg-amber-200`}
-            >
-              <Plus size={compact ? 12 : 14} />
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function GameView({
   pairs,
-  image,
+  images,
+  imageLayout,
   timerSettings,
   showDropTargets,
   showAnswerTiles,
   showGameReset,
+  showPairBoard,
   showTargetSentence,
-  showGroupStars,
-  groupStarsKey,
   labelBoxesClickable,
 }: {
   pairs: Pair[];
-  image: string | null;
+  images: string[];
+  imageLayout: "single" | "row4";
   timerSettings: TimerSettings;
   showDropTargets: boolean;
   showAnswerTiles: boolean;
   showGameReset: boolean;
+  showPairBoard: boolean;
   showTargetSentence: boolean;
-  showGroupStars: boolean;
-  groupStarsKey: string;
   labelBoxesClickable: boolean;
 }) {
   const [status, setStatus] = useState<Record<string, "correct" | "wrong" | undefined>>({});
@@ -889,12 +950,14 @@ function GameView({
   const [activeDropZoneId, setActiveDropZoneId] = useState<string | null>(null);
   const pointerDragRef = useRef<PointerAnswerDrag | null>(null);
   const [shuffled, setShuffled] = useState(() => pairs.map((p) => p.answer));
-  const [groupStars, setGroupStars] = useGroupStars(groupStarsKey, showGroupStars);
-  const useBalancedMatchLayout = showDropTargets && showGroupStars;
   const timerDurationSeconds = timerSettings.minutes * 60 + timerSettings.seconds;
   const [remainingSeconds, setRemainingSeconds] = useState(timerDurationSeconds);
   const [timerRunning, setTimerRunning] = useState(false);
   const speakCelebrationTimerRef = useRef<number | null>(null);
+  const followAudioRef = useRef<HTMLAudioElement | null>(null);
+  const followSpeechTokenRef = useRef(0);
+  const [speakingCardIndex, setSpeakingCardIndex] = useState<number | null>(null);
+  const isMultiImageRow = imageLayout === "row4" && !showPairBoard;
 
   const allCorrect = pairs.length > 0 && pairs.every((p) => status[p.id] === "correct");
 
@@ -939,6 +1002,12 @@ function GameView({
       if (speakCelebrationTimerRef.current) {
         window.clearTimeout(speakCelebrationTimerRef.current);
       }
+      followSpeechTokenRef.current += 1;
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      followAudioRef.current?.pause();
+      followAudioRef.current = null;
     };
   }, []);
 
@@ -1090,17 +1159,79 @@ function GameView({
     setSpeakSequenceIndex(nextIndex);
   };
 
-  const updateGroupStars = (groupId: string, change: number) => {
-    setGroupStars((current) =>
-      current.map((group) =>
-        group.id === groupId
-          ? { ...group, stars: Math.max(0, Math.min(99, group.stars + change)) }
-          : group,
-      ),
-    );
-  };
+  const stopFollowAudio = useCallback(() => {
+    if (!followAudioRef.current) return;
+    followAudioRef.current.onended = null;
+    followAudioRef.current.onerror = null;
+    followAudioRef.current.pause();
+    followAudioRef.current = null;
+  }, []);
+
+  const speakFollowLabel = useCallback(
+    (text: string, index: number) => {
+      const phrase = text.trim();
+      if (!phrase) return;
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      followSpeechTokenRef.current += 1;
+      const token = followSpeechTokenRef.current;
+      stopFollowAudio();
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      setSpeakingCardIndex(index);
+      if (typeof SpeechSynthesisUtterance !== "undefined" && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        utterance.lang = "en-US";
+        utterance.pitch = 1;
+        utterance.rate = 0.82;
+        utterance.onend = () => {
+          if (followSpeechTokenRef.current !== token) return;
+          setSpeakingCardIndex(null);
+        };
+        utterance.onerror = () => {
+          if (followSpeechTokenRef.current !== token) return;
+          setSpeakingCardIndex(null);
+        };
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
+      const fallbackAudioSrc = FOLLOW_AUDIO_BY_LABEL[phrase.toLowerCase()];
+      if (!fallbackAudioSrc) {
+        setSpeakingCardIndex(null);
+        return;
+      }
+
+      const audio = new Audio(fallbackAudioSrc);
+      audio.preload = "auto";
+      audio.onended = () => {
+        if (followSpeechTokenRef.current !== token) return;
+        followAudioRef.current = null;
+        setSpeakingCardIndex(null);
+      };
+      audio.onerror = () => {
+        if (followSpeechTokenRef.current !== token) return;
+        followAudioRef.current = null;
+        setSpeakingCardIndex(null);
+      };
+      followAudioRef.current = audio;
+      audio.play().catch(() => {
+        if (followSpeechTokenRef.current !== token) return;
+        followAudioRef.current = null;
+        setSpeakingCardIndex(null);
+      });
+    },
+    [stopFollowAudio],
+  );
 
   const selectedSentence = pairs.find((pair) => pair.id === selectedPairId)?.label;
+  const followCardLabels = images.map(
+    (_, index) => pairs[index]?.label.trim() || `Name ${index + 1}`,
+  );
 
   if (pairs.length === 0) {
     return (
@@ -1133,116 +1264,138 @@ function GameView({
       </div>
 
       <div
-        className={`${
-          useBalancedMatchLayout
-            ? "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch"
-            : `flex ${showDropTargets && showGroupStars ? "gap-4" : showGroupStars ? "gap-6" : "gap-8"} ${
-                showDropTargets || showGroupStars ? "items-stretch" : "items-center"
-              }`
-        } rounded-2xl border bg-white/60 p-6 ${showGroupStars ? "h-[360px]" : ""}`}
+        className={`flex rounded-2xl border bg-white/60 p-6 ${
+          showPairBoard ? "min-h-[360px] items-stretch gap-8" : "items-center justify-center"
+        }`}
       >
-        {useBalancedMatchLayout && <div aria-hidden="true" />}
         <div
           className={
-            showDropTargets
-              ? useBalancedMatchLayout
-                ? "flex h-[312px] shrink-0 items-stretch"
-                : `flex h-full shrink-0 items-stretch justify-center ${
-                    showGroupStars ? "w-[280px]" : ""
-                  }`
-              : `flex w-56 shrink-0 justify-center ${
-                  showGroupStars ? "h-full items-stretch" : "items-center"
+            showPairBoard && showDropTargets
+              ? "flex h-[312px] shrink-0 items-stretch justify-center"
+              : `flex shrink-0 items-stretch justify-center ${
+                  isMultiImageRow
+                    ? "w-full"
+                    : showPairBoard
+                      ? "w-56"
+                      : "w-full max-w-[320px] md:max-w-[420px]"
                 }`
           }
         >
-          {image ? (
+          {isMultiImageRow ? (
+            <div className="grid w-full gap-4 md:grid-cols-4">
+              {images.map((image, index) => (
+                <div
+                  key={`follow-image-${index}`}
+                  className="rounded-2xl border border-amber-100 bg-white/80 p-3 shadow-sm"
+                >
+                  <div className="flex h-full flex-col gap-3">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={`Reference ${index + 1}`}
+                        className="h-[220px] w-full rounded-xl border border-amber-100 bg-white select-none object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-[220px] items-center justify-center rounded-xl border-2 border-dashed border-slate-300 px-4 text-center text-xs text-slate-400">
+                        Image {index + 1}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => speakFollowLabel(followCardLabels[index], index)}
+                      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold shadow-sm transition ${
+                        speakingCardIndex === index
+                          ? "border-amber-400 bg-white text-amber-950 shadow-[0_0_0_2px_rgba(245,158,11,0.14)]"
+                          : "border-amber-200 bg-amber-50 text-slate-800 hover:bg-amber-100"
+                      }`}
+                    >
+                      <span>{followCardLabels[index]}</span>
+                      {speakingCardIndex === index && (
+                        <span
+                          aria-hidden="true"
+                          className="relative inline-flex h-5 w-5 items-center justify-center"
+                        >
+                          <span className="absolute inset-0 rounded-full bg-amber-300/60 animate-ping" />
+                          <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-amber-600">
+                            <Volume2 size={14} />
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : images[0] ? (
             <img
-              src={image}
+              src={images[0]}
               alt="Reference"
               className={`select-none pointer-events-none rounded-md ${
-                showDropTargets
+                showPairBoard && showDropTargets
                   ? "h-full w-auto object-contain"
-                  : showGroupStars
-                    ? "h-full w-full object-contain"
-                    : "max-h-[360px] w-full object-contain"
+                  : "max-h-[420px] w-full object-contain"
               }`}
             />
           ) : (
-            <div
-              className={`w-56 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center text-center text-xs text-slate-400 p-4 ${
-                showGroupStars ? "h-full" : ""
-              }`}
-            >
+            <div className="flex h-full w-56 items-center justify-center rounded-md border-2 border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
               Upload an image in Settings to display it here.
             </div>
           )}
         </div>
 
-        {useBalancedMatchLayout && <div aria-hidden="true" />}
+        {showPairBoard && (
+          <div className={`flex flex-1 flex-col gap-3 ${showDropTargets ? "justify-between" : ""}`}>
+            {pairs.map((p) => {
+              const labelSelected = selectedPairId === p.id;
+              const labelColorClass = labelSelected
+                ? "border-amber-500 bg-amber-100 shadow-sm"
+                : "border-slate-700 bg-white";
+              const labelBoxClassName = `border-2 rounded-md px-4 font-bold text-slate-800 flex items-center transition ${labelColorClass} ${
+                showDropTargets
+                  ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
+                  : `min-h-16 w-full py-3 text-left leading-snug ${
+                      showTargetSentence ? "h-full text-2xl" : "max-w-[560px]"
+                    }`
+              } ${
+                labelBoxesClickable
+                  ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                  : ""
+              }`;
 
-        <div
-          className={`${useBalancedMatchLayout ? "flex w-fit flex-col gap-3" : "flex-1 flex flex-col gap-3"}`}
-        >
-          {pairs.map((p) => {
-            const labelSelected = selectedPairId === p.id;
-            const labelColorClass = labelSelected
-              ? "border-amber-500 bg-amber-100 shadow-sm"
-              : "border-slate-700 bg-white";
-            const labelBoxClassName = `border-2 rounded-md px-4 font-bold text-slate-800 flex items-center transition ${labelColorClass} ${
-              showDropTargets
-                ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
-                : `min-h-16 w-full py-3 text-left leading-snug ${
-                    showGroupStars ? "h-full text-2xl" : "max-w-[560px]"
-                  }`
-            } ${
-              labelBoxesClickable
-                ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                : ""
-            }`;
-
-            return (
-              <div
-                key={p.id}
-                className={`flex items-center gap-3 ${
-                  showDropTargets || showGroupStars ? "flex-1" : ""
-                }`}
-              >
-                {labelBoxesClickable ? (
-                  <button
-                    type="button"
-                    aria-pressed={labelSelected}
-                    onClick={() => toggleLabelBox(p.id)}
-                    className={labelBoxClassName}
-                  >
-                    {p.label}
-                  </button>
-                ) : (
-                  <div className={labelBoxClassName}>{p.label}</div>
-                )}
-                {showDropTargets && (
-                  <>
-                    <div
-                      className={`${showGroupStars ? "w-9" : "w-[54px]"} border-t-2 border-dashed border-slate-400`}
-                    />
-                    <DropZone
-                      pairId={p.id}
-                      status={status[p.id]}
-                      value={placed[p.id]}
-                      isPointerOver={activeDropZoneId === p.id}
-                      onDrop={(ans) => onDrop(p.id, ans)}
-                    />
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {useBalancedMatchLayout && <div aria-hidden="true" />}
-
-        {showGroupStars && <GroupStarsPanel groups={groupStars} onChange={updateGroupStars} />}
-
-        {useBalancedMatchLayout && <div aria-hidden="true" />}
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-3 ${showDropTargets || showTargetSentence ? "flex-1" : ""}`}
+                >
+                  {labelBoxesClickable ? (
+                    <button
+                      type="button"
+                      aria-pressed={labelSelected}
+                      onClick={() => toggleLabelBox(p.id)}
+                      className={labelBoxClassName}
+                    >
+                      {p.label}
+                    </button>
+                  ) : (
+                    <div className={labelBoxClassName}>{p.label}</div>
+                  )}
+                  {showDropTargets && (
+                    <>
+                      <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
+                      <DropZone
+                        pairId={p.id}
+                        status={status[p.id]}
+                        value={placed[p.id]}
+                        isPointerOver={activeDropZoneId === p.id}
+                        onDrop={(ans) => onDrop(p.id, ans)}
+                      />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {showTargetSentence && selectedSentence && (
@@ -1723,8 +1876,9 @@ function DropZone({
 function SettingsView({
   pairs,
   setPairs,
-  image,
-  setImage,
+  images,
+  setImages,
+  imageLayout,
   title,
   setTitle,
   defaultTitle,
@@ -1734,8 +1888,9 @@ function SettingsView({
 }: {
   pairs: Pair[];
   setPairs: React.Dispatch<React.SetStateAction<Pair[]>>;
-  image: string | null;
-  setImage: React.Dispatch<React.SetStateAction<string | null>>;
+  images: string[];
+  setImages: React.Dispatch<React.SetStateAction<string[]>>;
+  imageLayout: "single" | "row4";
   title: string;
   setTitle: React.Dispatch<React.SetStateAction<string>>;
   defaultTitle: string;
@@ -1743,16 +1898,25 @@ function SettingsView({
   setTimerSettings: React.Dispatch<React.SetStateAction<TimerSettings>>;
   showAnswerFields: boolean;
 }) {
+  const usesFixedButtonNames = imageLayout === "row4" && !showAnswerFields;
+
   const update = (id: string, field: "label" | "answer", value: string) => {
     setPairs((ps) => ps.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
   };
   const add = () => setPairs((ps) => [...ps, { id: Date.now().toString(), label: "", answer: "" }]);
   const remove = (id: string) => setPairs((ps) => ps.filter((p) => p.id !== id));
 
-  const onUpload = (file: File | null | undefined) => {
+  const updateImageAtIndex = (index: number, nextImage: string | null) => {
+    setImages((current) =>
+      current.map((image, imageIndex) => (imageIndex === index ? nextImage : image)),
+    );
+  };
+
+  const onUpload = (file: File | null | undefined, index: number) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setImage(typeof reader.result === "string" ? reader.result : null);
+    reader.onload = () =>
+      updateImageAtIndex(index, typeof reader.result === "string" ? reader.result : null);
     reader.readAsDataURL(file);
   };
 
@@ -1763,7 +1927,7 @@ function SettingsView({
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className={`mx-auto space-y-6 ${usesFixedButtonNames ? "max-w-4xl" : "max-w-2xl"}`}>
       <div className="bg-white rounded-xl border p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Page title</h2>
         <p className="text-sm text-slate-500 mb-4">Shown in the header on the home page.</p>
@@ -1775,38 +1939,109 @@ function SettingsView({
         />
       </div>
       <div className="bg-white rounded-xl border p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-1">Reference image</h2>
-        <p className="text-sm text-slate-500 mb-4">
-          Upload the image shown on the home page. Recommended: 840×1080 px.
-        </p>
-        <div className="flex items-center gap-4">
-          <div className="w-32 h-32 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center overflow-hidden bg-slate-50">
-            {image ? (
-              <img src={image} alt="Uploaded" className="w-full h-full object-contain" />
-            ) : (
-              <span className="text-xs text-slate-400">No image</span>
-            )}
-          </div>
-          <div className="flex flex-col gap-2">
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md cursor-pointer hover:bg-amber-600 w-fit">
-              {image ? "Replace image" : "Upload image"}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => onUpload(e.target.files?.[0])}
-              />
-            </label>
-            {image && image !== DEFAULT_IMAGE && (
-              <button
-                onClick={() => setImage(DEFAULT_IMAGE)}
-                className="text-xs text-slate-500 hover:text-red-600 w-fit"
-              >
-                Use default image
-              </button>
-            )}
-          </div>
-        </div>
+        {usesFixedButtonNames ? (
+          <>
+            <h2 className="text-lg font-semibold text-slate-800 mb-1">Follow cards</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Set each Follow card separately: its image and its button text.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {images.map((image, index) => (
+                <div
+                  key={`follow-setting-card-${index}`}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+                >
+                  <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Card {index + 1}
+                  </p>
+                  <div className="h-44 w-full overflow-hidden rounded-xl border-2 border-dashed border-slate-300 bg-white">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={`Uploaded ${index + 1}`}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-4 text-center text-xs text-slate-400">
+                        No image
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <label className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white cursor-pointer hover:bg-amber-600">
+                      {image ? "Replace image" : "Upload image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => onUpload(e.target.files?.[0], index)}
+                      />
+                    </label>
+                    {image && image !== DEFAULT_IMAGE && (
+                      <button
+                        onClick={() => updateImageAtIndex(index, DEFAULT_IMAGE)}
+                        className="rounded-md px-3 py-2 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600"
+                      >
+                        Use default image
+                      </button>
+                    )}
+                  </div>
+                  <label className="mt-4 block text-sm font-medium text-slate-700">
+                    Button text
+                    <input
+                      value={pairs[index]?.label ?? ""}
+                      onChange={(e) => {
+                        const pairId = pairs[index]?.id;
+                        if (pairId) update(pairId, "label", e.target.value);
+                      }}
+                      placeholder="Get up"
+                      className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-lg font-semibold text-slate-800 mb-1">
+              {imageLayout === "row4" ? "Reference images" : "Reference image"}
+            </h2>
+            <p className="text-sm text-slate-500 mb-4">
+              {imageLayout === "row4"
+                ? "Upload 4 images shown in one row on the home page."
+                : "Upload the image shown on the home page. Recommended: 840×1080 px."}
+            </p>
+            <div className="flex items-center gap-4">
+              <div className="w-32 h-32 border-2 border-dashed border-slate-300 rounded-md flex items-center justify-center overflow-hidden bg-slate-50">
+                {images[0] ? (
+                  <img src={images[0]} alt="Uploaded" className="w-full h-full object-contain" />
+                ) : (
+                  <span className="text-xs text-slate-400">No image</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md cursor-pointer hover:bg-amber-600 w-fit">
+                  {images[0] ? "Replace image" : "Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => onUpload(e.target.files?.[0], 0)}
+                  />
+                </label>
+                {images[0] && images[0] !== DEFAULT_IMAGE && (
+                  <button
+                    onClick={() => updateImageAtIndex(0, DEFAULT_IMAGE)}
+                    className="text-xs text-slate-500 hover:text-red-600 w-fit"
+                  >
+                    Use default image
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
       <div className="bg-white rounded-xl border p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Timer</h2>
@@ -1837,63 +2072,65 @@ function SettingsView({
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border p-6">
-        <h2 className="text-lg font-semibold text-slate-800 mb-1">
-          {showAnswerFields ? "Match pairs" : "Sentences"}
-        </h2>
-        <p className="text-sm text-slate-500 mb-6">
-          {showAnswerFields
-            ? "The label appears in the solid box on the left. The answer is the correct yellow tile to drag into its dashed box."
-            : "Edit the sentence buttons shown on the Speak page."}
-        </p>
-        <div
-          className={`grid gap-3 text-xs font-medium text-slate-500 uppercase mb-2 px-1 ${
-            showAnswerFields ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-[1fr_auto]"
-          }`}
-        >
-          <div>{showAnswerFields ? "Label (solid box)" : "Sentence"}</div>
-          {showAnswerFields && <div>Answer (dashed box)</div>}
-          <div></div>
-        </div>
-        <div className="space-y-2">
-          {pairs.map((p) => (
-            <div
-              key={p.id}
-              className={`grid gap-3 ${
-                showAnswerFields ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-[1fr_auto]"
-              }`}
-            >
-              <input
-                value={p.label}
-                onChange={(e) => update(p.id, "label", e.target.value)}
-                placeholder={showAnswerFields ? "flowers" : "Look at the tree."}
-                className="border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
-              />
-              {showAnswerFields && (
+      {!usesFixedButtonNames && (
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">
+            {showAnswerFields ? "Match pairs" : "Sentences"}
+          </h2>
+          <p className="text-sm text-slate-500 mb-6">
+            {showAnswerFields
+              ? "The label appears in the solid box on the left. The answer is the correct yellow tile to drag into its dashed box."
+              : "Edit the sentence buttons shown on the activity page."}
+          </p>
+          <div
+            className={`grid gap-3 text-xs font-medium text-slate-500 uppercase mb-2 px-1 ${
+              showAnswerFields ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-[1fr_auto]"
+            }`}
+          >
+            <div>{showAnswerFields ? "Label (solid box)" : "Sentence"}</div>
+            {showAnswerFields && <div>Answer (dashed box)</div>}
+            <div></div>
+          </div>
+          <div className="space-y-2">
+            {pairs.map((p) => (
+              <div
+                key={p.id}
+                className={`grid gap-3 ${
+                  showAnswerFields ? "grid-cols-[1fr_1fr_auto]" : "grid-cols-[1fr_auto]"
+                }`}
+              >
                 <input
-                  value={p.answer}
-                  onChange={(e) => update(p.id, "answer", e.target.value)}
-                  placeholder="pink"
+                  value={p.label}
+                  onChange={(e) => update(p.id, "label", e.target.value)}
+                  placeholder={showAnswerFields ? "flowers" : "Look at the tree."}
                   className="border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
                 />
-              )}
-              <button
-                onClick={() => remove(p.id)}
-                className="px-3 rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600"
-                aria-label="Remove"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
+                {showAnswerFields && (
+                  <input
+                    value={p.answer}
+                    onChange={(e) => update(p.id, "answer", e.target.value)}
+                    placeholder="pink"
+                    className="border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                )}
+                <button
+                  onClick={() => remove(p.id)}
+                  className="px-3 rounded-md text-slate-500 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Remove"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={add}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-sm rounded-md hover:bg-slate-700"
+          >
+            <Plus size={16} /> {showAnswerFields ? "Add pair" : "Add sentence"}
+          </button>
         </div>
-        <button
-          onClick={add}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-sm rounded-md hover:bg-slate-700"
-        >
-          <Plus size={16} /> {showAnswerFields ? "Add pair" : "Add sentence"}
-        </button>
-      </div>
+      )}
     </div>
   );
 }
