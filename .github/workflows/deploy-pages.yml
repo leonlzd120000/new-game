@@ -39,6 +39,11 @@ jobs:
       - name: Build static site
         run: npm run build:pages
 
+      - name: Prepare Pages artifact
+        run: |
+          touch dist/client/.nojekyll
+          cp dist/client/index.html dist/client/404.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

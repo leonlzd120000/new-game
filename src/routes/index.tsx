@@ -50,6 +50,15 @@ type PointerDragPreview = {
 type PointerAnswerDrag = PointerDragPreview & {
   pointerId: number;
 };
+type RolePlayRoleOption = {
+  label: string;
+};
+type RoleSelectionState = {
+  leftRole: string;
+  rightRole: string;
+  setLeftRole: React.Dispatch<React.SetStateAction<string>>;
+  setRightRole: React.Dispatch<React.SetStateAction<string>>;
+};
 type SpeechRecognitionAlternativeLike = {
   confidence?: number;
   transcript: string;
@@ -80,6 +89,14 @@ type SpeechRecognitionLike = {
   start: () => void;
   stop: () => void;
 };
+type SpeakingPracticeController = {
+  errorMessage: string;
+  isListening: boolean;
+  scoreResult: SpeechScoreResult | null;
+  sentenceWordTokens: SentenceWordToken[];
+  toggleScoring: () => void;
+  transcript: string;
+};
 type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
 type SpeechRecognitionWindow = Window &
   typeof globalThis & {
@@ -87,7 +104,7 @@ type SpeechRecognitionWindow = Window &
     webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
   };
 type WorkspaceBaseConfig = {
-  id: "follow-work" | "match-master" | "order-work";
+  id: "follow-work" | "match-master" | "group-work" | "role-play-work";
   label: string;
   defaultTitle: string;
   view: "activity" | "placeholder";
@@ -97,6 +114,7 @@ type ActivityWorkspaceConfig = WorkspaceBaseConfig & {
   storageKey: string;
   imageKeys: readonly string[];
   imageLayout: "single" | "row4";
+  sentenceColumns: 1 | 2;
   titleKey: string;
   timerKey: string;
   timerDefaultVersionKey: string;
@@ -104,6 +122,7 @@ type ActivityWorkspaceConfig = WorkspaceBaseConfig & {
   timerDefault: TimerSettings;
   legacyTimerDefaults: TimerSettings[];
   defaultPairs: Pair[];
+  fixedPairCount?: number;
   legacyTitleMap?: Record<string, string>;
   pairsDefaultVersionKey?: string;
   pairsDefaultVersion?: string;
@@ -113,6 +132,7 @@ type ActivityWorkspaceConfig = WorkspaceBaseConfig & {
   showPairBoard: boolean;
   showTargetSentence: boolean;
   labelBoxesClickable: boolean;
+  sentenceEditorHelpText?: string;
 };
 type PlaceholderWorkspaceConfig = WorkspaceBaseConfig & {
   view: "placeholder";
@@ -137,12 +157,83 @@ const FOLLOW_TITLE_KEY = "follow-match-title-v1";
 const FOLLOW_TIMER_KEY = "follow-match-timer-v1";
 const FOLLOW_TIMER_DEFAULT_VERSION_KEY = "follow-match-timer-default-version";
 const FOLLOW_PAIRS_DEFAULT_VERSION_KEY = "follow-match-pairs-default-version";
+const ROLE_PLAY_STORAGE_KEY = "role-play-pairs-v1";
+const ROLE_PLAY_IMAGE_KEY = "role-play-image-v1";
+const ROLE_PLAY_TITLE_KEY = "role-play-title-v1";
+const ROLE_PLAY_TIMER_KEY = "role-play-timer-v1";
+const ROLE_PLAY_TIMER_DEFAULT_VERSION_KEY = "role-play-timer-default-version";
+const ROLE_PLAY_PAIRS_DEFAULT_VERSION_KEY = "role-play-pairs-default-version";
+const ROLE_PLAY_LEFT_ROLE_KEY = "role-play-left-role-v1";
+const ROLE_PLAY_RIGHT_ROLE_KEY = "role-play-right-role-v1";
 const WORKSPACE_STORAGE_KEY = "active-workspace-v1";
 const MATCH_TIMER_DEFAULT_VERSION = "2";
 const SPEAK_TIMER_DEFAULT_VERSION = "3";
 const FOLLOW_PAIRS_DEFAULT_VERSION = "1";
+const ROLE_PLAY_PAIRS_DEFAULT_VERSION = "2";
 const DEFAULT_TITLE = "Match";
 const FOLLOW_DEFAULT_TITLE = "Follow";
+const READ_DEFAULT_TITLE = "Read";
+const ROLE_PLAY_DEFAULT_TITLE = "Role play";
+
+function createRoleAvatar(svg: string) {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const ROLE_PLAY_NEUTRAL_AVATAR_LEFT = createRoleAvatar(`
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+    <circle cx="48" cy="48" r="46" fill="#dafcff"/>
+    <ellipse cx="48" cy="80" rx="28" ry="15" fill="#56c2ff"/>
+    <rect x="30" y="65" width="36" height="15" rx="7.5" fill="#56c2ff"/>
+    <path d="M24 42c0-17 10-28 24-28s24 11 24 28v14H24z" fill="#4b4f71"/>
+    <path d="M30 45c0-11 7-20 18-20s18 9 18 20v8H30z" fill="#ffd9c7"/>
+    <rect x="43" y="55" width="10" height="10" rx="5" fill="#ffd9c7"/>
+    <circle cx="41" cy="41" r="6.2" fill="none" stroke="#56607a" stroke-width="2.4"/>
+    <circle cx="55" cy="41" r="6.2" fill="none" stroke="#56607a" stroke-width="2.4"/>
+    <path d="M47 41h2" stroke="#56607a" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="41" cy="41" r="1.7" fill="#2f3451"/>
+    <circle cx="55" cy="41" r="1.7" fill="#2f3451"/>
+    <path d="M43.5 49c2.6 2.4 6.4 2.4 9 0" fill="none" stroke="#d77b8b" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="36" cy="46" r="2.4" fill="#ffb9c8" opacity="0.45"/>
+    <circle cx="60" cy="46" r="2.4" fill="#ffb9c8" opacity="0.45"/>
+    <path d="M33 28c3-4 8.5-6.5 15-6.5 6.8 0 12.2 2.4 15.5 6.6" fill="none" stroke="#4b4f71" stroke-width="3.1" stroke-linecap="round"/>
+  </svg>
+`);
+
+const ROLE_PLAY_NEUTRAL_AVATAR_RIGHT = createRoleAvatar(`
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+    <circle cx="48" cy="48" r="46" fill="#e6fbff"/>
+    <ellipse cx="48" cy="80" rx="28" ry="15" fill="#68c8ff"/>
+    <rect x="30" y="65" width="36" height="15" rx="7.5" fill="#68c8ff"/>
+    <path d="M22 42c0-16 11-27 26-27s26 11 26 27v14H22z" fill="#3e5172"/>
+    <path d="M28 44c0-11 8-19 20-19s20 8 20 19v9H28z" fill="#ffe1cf"/>
+    <rect x="43" y="54" width="10" height="10" rx="5" fill="#ffe1cf"/>
+    <path d="M33 31c4.8-5.8 9.9-8.7 15-8.7 5.4 0 10.6 2.7 15.4 8.7" fill="none" stroke="#3e5172" stroke-width="3.1" stroke-linecap="round"/>
+    <rect x="35" y="35.5" width="26" height="12" rx="6" fill="none" stroke="#5e6a8b" stroke-width="2.4"/>
+    <circle cx="41.5" cy="41.5" r="1.7" fill="#2c3651"/>
+    <circle cx="54.5" cy="41.5" r="1.7" fill="#2c3651"/>
+    <path d="M43.5 49c2.6 2 6.4 2 9 0" fill="none" stroke="#d77b8b" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="36" cy="46" r="2.2" fill="#ffbecf" opacity="0.42"/>
+    <circle cx="60" cy="46" r="2.2" fill="#ffbecf" opacity="0.42"/>
+  </svg>
+`);
+
+const ROLE_PLAY_ROLE_OPTIONS: RolePlayRoleOption[] = [
+  {
+    label: "Kitty",
+  },
+  {
+    label: "Kitty's Mum",
+  },
+  {
+    label: "Mum",
+  },
+  {
+    label: "Lily老师",
+  },
+];
+const ROLE_PLAY_ROLE_NAMES = ROLE_PLAY_ROLE_OPTIONS.map((option) => option.label);
+const ROLE_PLAY_DEFAULT_LEFT_ROLE = ROLE_PLAY_ROLE_OPTIONS[0].label;
+const ROLE_PLAY_DEFAULT_RIGHT_ROLE = ROLE_PLAY_ROLE_OPTIONS[1].label;
 const DEFAULT_WORKSPACE_ID: WorkspaceConfig["id"] = "follow-work";
 const MATCH_TIMER_DEFAULT: TimerSettings = { minutes: 2, seconds: 0 };
 const SPEAK_TIMER_DEFAULT: TimerSettings = { minutes: 4, seconds: 0 };
@@ -154,6 +245,8 @@ const CELEBRATION_BASE_SECONDS =
   (confettiAnimation.op - confettiAnimation.ip) / confettiAnimation.fr;
 const CELEBRATION_PLAYBACK_SPEED =
   CELEBRATION_BASE_SECONDS / (CELEBRATION_BASE_SECONDS + CELEBRATION_EXTRA_SECONDS);
+const ROLE_SPEAKER_MIN_VISIBLE_MS = 700;
+const ROLE_RESPONSE_PLAY_DELAY_MS = 480;
 const APP_FRAME_MAX_WIDTH_CLASS = "max-w-[1124px]";
 const MATCH_BOX_WIDTH_CLASS = "w-[170px] md:w-[186px]";
 
@@ -200,6 +293,38 @@ const GROUP_WORK_DEFAULT_PAIRS: Pair[] = [
     answer: "branches",
   },
 ];
+const ROLE_PLAY_DEFAULT_PAIRS: Pair[] = [
+  {
+    id: "1",
+    label: "Look at the tree.",
+    answer: "tree",
+  },
+  {
+    id: "2",
+    label: "The roots are deep.",
+    answer: "roots",
+  },
+  {
+    id: "3",
+    label: "The trunk is strong.",
+    answer: "trunk",
+  },
+  {
+    id: "4",
+    label: "The branches are green.",
+    answer: "branches",
+  },
+  {
+    id: "5",
+    label: "The leaves are green.",
+    answer: "leaves",
+  },
+  {
+    id: "6",
+    label: "The flowers are pink.",
+    answer: "flowers",
+  },
+];
 const GROUP_WORK_LEGACY_SENTENCES = new Set([
   "These green branches have some beautiful red apples.",
   "The clever monkey jumps over the river branches.",
@@ -216,6 +341,7 @@ const WORKSPACES: WorkspaceConfig[] = [
     storageKey: FOLLOW_STORAGE_KEY,
     imageKeys: FOLLOW_IMAGE_KEYS,
     imageLayout: "row4",
+    sentenceColumns: 1,
     titleKey: FOLLOW_TITLE_KEY,
     timerKey: FOLLOW_TIMER_KEY,
     timerDefaultVersionKey: FOLLOW_TIMER_DEFAULT_VERSION_KEY,
@@ -246,6 +372,7 @@ const WORKSPACES: WorkspaceConfig[] = [
     storageKey: STORAGE_KEY,
     imageKeys: MATCH_IMAGE_KEYS,
     imageLayout: "single",
+    sentenceColumns: 1,
     titleKey: TITLE_KEY,
     timerKey: TIMER_KEY,
     timerDefaultVersionKey: TIMER_DEFAULT_VERSION_KEY,
@@ -262,12 +389,68 @@ const WORKSPACES: WorkspaceConfig[] = [
     labelBoxesClickable: false,
   },
   {
-    id: "order-work",
-    label: "Order",
-    defaultTitle: "Order",
-    view: "placeholder",
-    description:
-      "Order mode is ready in the menu. Add the sequence or ordering interaction here when you want to build the third activity.",
+    id: "group-work",
+    label: "Read",
+    defaultTitle: READ_DEFAULT_TITLE,
+    view: "activity",
+    storageKey: "group-work-pairs-v1",
+    imageKeys: ["group-work-image-v1"],
+    imageLayout: "single",
+    sentenceColumns: 1,
+    titleKey: "group-work-title-v1",
+    timerKey: "group-work-timer-v1",
+    timerDefaultVersionKey: "group-work-timer-default-version",
+    timerDefaultVersion: SPEAK_TIMER_DEFAULT_VERSION,
+    timerDefault: SPEAK_TIMER_DEFAULT,
+    legacyTimerDefaults: [LEGACY_ONE_MINUTE_TIMER, MATCH_TIMER_DEFAULT],
+    defaultPairs: GROUP_WORK_DEFAULT_PAIRS,
+    legacyTitleMap: {
+      "Group Work": READ_DEFAULT_TITLE,
+      Speak: READ_DEFAULT_TITLE,
+      "Let's speak": READ_DEFAULT_TITLE,
+      "Let's speak.": READ_DEFAULT_TITLE,
+      Read: READ_DEFAULT_TITLE,
+    },
+    pairsDefaultVersionKey: "group-work-pairs-default-version",
+    pairsDefaultVersion: GROUP_WORK_PAIRS_DEFAULT_VERSION,
+    showDropTargets: false,
+    showAnswerTiles: false,
+    showGameReset: false,
+    showPairBoard: true,
+    showTargetSentence: true,
+    labelBoxesClickable: true,
+    sentenceEditorHelpText: "Edit the sentence buttons shown on the Read page.",
+  },
+  {
+    id: "role-play-work",
+    label: "Role play",
+    defaultTitle: ROLE_PLAY_DEFAULT_TITLE,
+    view: "activity",
+    storageKey: ROLE_PLAY_STORAGE_KEY,
+    imageKeys: [ROLE_PLAY_IMAGE_KEY],
+    imageLayout: "single",
+    sentenceColumns: 2,
+    titleKey: ROLE_PLAY_TITLE_KEY,
+    timerKey: ROLE_PLAY_TIMER_KEY,
+    timerDefaultVersionKey: ROLE_PLAY_TIMER_DEFAULT_VERSION_KEY,
+    timerDefaultVersion: SPEAK_TIMER_DEFAULT_VERSION,
+    timerDefault: SPEAK_TIMER_DEFAULT,
+    legacyTimerDefaults: [LEGACY_ONE_MINUTE_TIMER, MATCH_TIMER_DEFAULT],
+    defaultPairs: ROLE_PLAY_DEFAULT_PAIRS,
+    fixedPairCount: 6,
+    legacyTitleMap: {
+      "Role Play": ROLE_PLAY_DEFAULT_TITLE,
+      "Role play.": ROLE_PLAY_DEFAULT_TITLE,
+    },
+    pairsDefaultVersionKey: ROLE_PLAY_PAIRS_DEFAULT_VERSION_KEY,
+    pairsDefaultVersion: ROLE_PLAY_PAIRS_DEFAULT_VERSION,
+    showDropTargets: false,
+    showAnswerTiles: false,
+    showGameReset: false,
+    showPairBoard: true,
+    showTargetSentence: true,
+    labelBoxesClickable: true,
+    sentenceEditorHelpText: "Edit the left and right sentence columns shown on the Role play page.",
   },
 ];
 
@@ -315,6 +498,35 @@ function useTitle(
   }, [isLoaded, storageKey, title]);
   return [title, setTitle] as const;
 }
+
+function useStoredChoice(storageKey: string, defaultValue: string, validValues: readonly string[]) {
+  const [value, setValue] = useState(defaultValue);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+    try {
+      const raw = localStorage.getItem(storageKey);
+      setValue(raw && validValues.includes(raw) ? raw : defaultValue);
+    } catch (error) {
+      void error;
+      setValue(defaultValue);
+    }
+    setIsLoaded(true);
+  }, [defaultValue, storageKey, validValues]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem(storageKey, value);
+    } catch (error) {
+      void error;
+    }
+  }, [isLoaded, storageKey, value]);
+
+  return [value, setValue] as const;
+}
+
 function useImages(storageKeys: readonly string[]) {
   const [images, setImages] = useState<string[]>(() => storageKeys.map(() => DEFAULT_IMAGE));
   const [isLoaded, setIsLoaded] = useState(false);
@@ -537,11 +749,22 @@ function WorkspacePage({
     workspace.timerDefault,
     workspace.legacyTimerDefaults,
   );
+  const [leftRole, setLeftRole] = useStoredChoice(
+    ROLE_PLAY_LEFT_ROLE_KEY,
+    ROLE_PLAY_DEFAULT_LEFT_ROLE,
+    ROLE_PLAY_ROLE_NAMES,
+  );
+  const [rightRole, setRightRole] = useStoredChoice(
+    ROLE_PLAY_RIGHT_ROLE_KEY,
+    ROLE_PLAY_DEFAULT_RIGHT_ROLE,
+    ROLE_PLAY_ROLE_NAMES,
+  );
 
   useEffect(() => {
-    if (workspace.imageLayout !== "row4") return;
+    const targetCount =
+      workspace.imageLayout === "row4" ? workspace.imageKeys.length : workspace.fixedPairCount;
+    if (!targetCount) return;
 
-    const targetCount = workspace.imageKeys.length;
     setPairs((current) => {
       const trimmed = current.slice(0, targetCount);
       if (trimmed.length === targetCount) {
@@ -564,6 +787,7 @@ function WorkspacePage({
   }, [
     setPairs,
     workspace.defaultPairs,
+    workspace.fixedPairCount,
     workspace.id,
     workspace.imageKeys.length,
     workspace.imageLayout,
@@ -578,6 +802,7 @@ function WorkspacePage({
             pairs={pairs}
             images={images}
             imageLayout={workspace.imageLayout}
+            sentenceColumns={workspace.sentenceColumns}
             timerSettings={timerSettings}
             showDropTargets={workspace.showDropTargets}
             showAnswerTiles={workspace.showAnswerTiles}
@@ -585,6 +810,16 @@ function WorkspacePage({
             showPairBoard={workspace.showPairBoard}
             showTargetSentence={workspace.showTargetSentence}
             labelBoxesClickable={workspace.labelBoxesClickable}
+            roleSelection={
+              workspace.id === "role-play-work"
+                ? {
+                    leftRole,
+                    rightRole,
+                    setLeftRole,
+                    setRightRole,
+                  }
+                : undefined
+            }
           />
         ) : (
           <SettingsView
@@ -599,7 +834,10 @@ function WorkspacePage({
             defaultTitle={workspace.defaultTitle}
             timerSettings={timerSettings}
             setTimerSettings={setTimerSettings}
+            sentenceColumns={workspace.sentenceColumns}
+            fixedPairCount={workspace.fixedPairCount}
             showAnswerFields={workspace.showAnswerTiles}
+            sentenceEditorHelpText={workspace.sentenceEditorHelpText}
           />
         )}
       </>
@@ -664,6 +902,44 @@ function WorkspaceShell({
       </header>
       <main className={`${APP_FRAME_MAX_WIDTH_CLASS} mx-auto px-6 py-4`}>{children}</main>
     </>
+  );
+}
+
+function RolePlayRoleSelector({
+  selectedRole,
+  avatarSrc,
+  isActive,
+  onActivate,
+}: {
+  selectedRole: string;
+  avatarSrc: string;
+  isActive: boolean;
+  onActivate: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={isActive}
+      aria-label={`Role panel for ${selectedRole}`}
+      onClick={onActivate}
+      className={`relative overflow-hidden rounded-[26px] border px-4 pb-4 pt-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#fcf9f2] ${
+        isActive
+          ? "border-amber-400 bg-[linear-gradient(180deg,#fffaf0_0%,#f6ead0_56%,#eed8af_100%)] shadow-[0_0_0_2px_rgba(251,191,36,0.14),0_18px_34px_rgba(170,126,54,0.18)]"
+          : "border-amber-200/80 bg-[linear-gradient(180deg,#fffdf7_0%,#f8f0dc_54%,#f1e0bc_100%)] shadow-[0_18px_34px_rgba(170,126,54,0.14)] hover:border-amber-300 hover:shadow-[0_20px_36px_rgba(170,126,54,0.16)]"
+      }`}
+    >
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-16 rounded-full bg-amber-200/35 blur-3xl" />
+      <div className="pointer-events-none absolute -right-5 top-8 h-20 w-20 rounded-full bg-orange-200/25 blur-2xl" />
+      <div className="relative z-10 mb-4 flex justify-center">
+        <span className="relative flex h-20 w-20 overflow-hidden rounded-full border-[4px] border-amber-50 bg-white shadow-[0_0_0_6px_rgba(252,225,170,0.42),0_16px_30px_rgba(170,126,54,0.18)]">
+          <img
+            src={avatarSrc}
+            alt="Role avatar"
+            className="h-full w-full object-cover"
+          />
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -896,10 +1172,191 @@ function getSpeechRecognitionConstructor() {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 }
 
+function useSpeakingPractice(
+  targetSentence: string,
+  onResult?: (tone: SpeechScoreTone) => void,
+): SpeakingPracticeController {
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const correctAudioRef = useRef<HTMLAudioElement | null>(null);
+  const resultAudioRef = useRef<HTMLAudioElement | null>(null);
+  const tryAgainAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [scoreResult, setScoreResult] = useState<SpeechScoreResult | null>(null);
+  const [transcript, setTranscript] = useState("");
+
+  useEffect(() => {
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setErrorMessage("");
+    setIsListening(false);
+    setScoreResult(null);
+    setTranscript("");
+  }, [targetSentence]);
+
+  useEffect(() => {
+    correctAudioRef.current = new Audio(correctSound);
+    tryAgainAudioRef.current = new Audio(tryAgainSound);
+    correctAudioRef.current.preload = "auto";
+    tryAgainAudioRef.current.preload = "auto";
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+      correctAudioRef.current?.pause();
+      tryAgainAudioRef.current?.pause();
+    };
+  }, []);
+
+  const resetAudio = useCallback((audio: HTMLAudioElement) => {
+    audio.pause();
+    try {
+      audio.currentTime = 0;
+    } catch (error) {
+      void error;
+    }
+  }, []);
+
+  const primeResultAudio = useCallback(() => {
+    const audios = [correctAudioRef.current, tryAgainAudioRef.current].filter(
+      (audio): audio is HTMLAudioElement => Boolean(audio),
+    );
+
+    audios.forEach((audio) => {
+      audio.muted = true;
+      void audio
+        .play()
+        .then(() => {
+          resetAudio(audio);
+          audio.muted = false;
+        })
+        .catch(() => {
+          audio.muted = false;
+        });
+    });
+  }, [resetAudio]);
+
+  const playResultAudio = useCallback(
+    (tone: SpeechScoreTone) => {
+      const audio =
+        tone === "great" || tone === "pass" ? correctAudioRef.current : tryAgainAudioRef.current;
+      if (!audio) return;
+
+      resultAudioRef.current?.pause();
+      resultAudioRef.current = audio;
+      resetAudio(audio);
+      audio.muted = false;
+      audio.play().catch(() => {});
+    },
+    [resetAudio],
+  );
+
+  useEffect(() => {
+    if (scoreResult) playResultAudio(scoreResult.tone);
+  }, [playResultAudio, scoreResult]);
+
+  const applyScore = useCallback(
+    (spokenText: string) => {
+      const cleanTranscript = spokenText.trim();
+      setTranscript(cleanTranscript);
+      const nextScoreResult = scoreSpeech(targetSentence, cleanTranscript);
+      setScoreResult(nextScoreResult);
+      onResult?.(nextScoreResult.tone);
+    },
+    [onResult, targetSentence],
+  );
+
+  const toggleScoring = useCallback(() => {
+    if (!targetSentence.trim()) {
+      setErrorMessage("请先选择一句要朗读的句子。");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    primeResultAudio();
+
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) {
+      setErrorMessage("当前浏览器不支持语音识别。请使用 Chrome 后再试。");
+      setScoreResult(null);
+      setTranscript("");
+      return;
+    }
+
+    const recognition = new Recognition();
+    let latestTranscript = "";
+    let hadError = false;
+    recognitionRef.current = recognition;
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const parts: string[] = [];
+      for (let index = 0; index < event.results.length; index++) {
+        const transcriptPart = event.results[index][0]?.transcript;
+        if (transcriptPart) parts.push(transcriptPart);
+      }
+      latestTranscript = parts.join(" ").trim();
+      setTranscript(latestTranscript);
+    };
+    recognition.onerror = (event) => {
+      hadError = true;
+      setIsListening(false);
+      const isPermissionError =
+        event.error === "not-allowed" || event.error === "service-not-allowed";
+      setErrorMessage(
+        isPermissionError
+          ? "麦克风权限未开启。请允许浏览器使用麦克风后再试。"
+          : "语音识别失败，请确认麦克风可用后再试。",
+      );
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (hadError) return;
+      if (!latestTranscript) {
+        setErrorMessage("没有识别到朗读内容，请靠近麦克风再试一次。");
+        setScoreResult(null);
+        return;
+      }
+      setErrorMessage("");
+      applyScore(latestTranscript);
+    };
+
+    setErrorMessage("");
+    setScoreResult(null);
+    setTranscript("");
+    setIsListening(true);
+    try {
+      recognition.start();
+    } catch (error) {
+      void error;
+      setIsListening(false);
+      setErrorMessage("语音识别无法启动，请稍后再试。");
+    }
+  }, [applyScore, isListening, primeResultAudio, targetSentence]);
+
+  return {
+    errorMessage,
+    isListening,
+    scoreResult,
+    sentenceWordTokens: getSentenceWordTokens(targetSentence, transcript),
+    toggleScoring,
+    transcript,
+  };
+}
+
 function GameView({
   pairs,
   images,
   imageLayout,
+  sentenceColumns,
   timerSettings,
   showDropTargets,
   showAnswerTiles,
@@ -907,10 +1364,12 @@ function GameView({
   showPairBoard,
   showTargetSentence,
   labelBoxesClickable,
+  roleSelection,
 }: {
   pairs: Pair[];
   images: string[];
   imageLayout: "single" | "row4";
+  sentenceColumns: 1 | 2;
   timerSettings: TimerSettings;
   showDropTargets: boolean;
   showAnswerTiles: boolean;
@@ -918,6 +1377,7 @@ function GameView({
   showPairBoard: boolean;
   showTargetSentence: boolean;
   labelBoxesClickable: boolean;
+  roleSelection?: RoleSelectionState;
 }) {
   const [status, setStatus] = useState<Record<string, "correct" | "wrong" | undefined>>({});
   const [speakSequenceIndex, setSpeakSequenceIndex] = useState(0);
@@ -939,6 +1399,14 @@ function GameView({
   const followAudioRef = useRef<HTMLAudioElement | null>(null);
   const followSpeechTokenRef = useRef(0);
   const [speakingCardIndex, setSpeakingCardIndex] = useState<number | null>(null);
+  const [activeRoleColumn, setActiveRoleColumn] = useState<number | null>(null);
+  const [speakingRoleColumn, setSpeakingRoleColumn] = useState<number | null>(null);
+  const [speakingRolePairId, setSpeakingRolePairId] = useState<string | null>(null);
+  const roleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const roleSpeechTokenRef = useRef(0);
+  const roleSpeakerTimeoutRef = useRef<number | null>(null);
+  const roleResponseTimeoutRef = useRef<number | null>(null);
+  const pendingRolePracticePairIdRef = useRef<string | null>(null);
   const isMultiImageRow = imageLayout === "row4" && !showPairBoard;
 
   const allCorrect = pairs.length > 0 && pairs.every((p) => status[p.id] === "correct");
@@ -984,12 +1452,23 @@ function GameView({
       if (speakCelebrationTimerRef.current) {
         window.clearTimeout(speakCelebrationTimerRef.current);
       }
+      if (roleSpeakerTimeoutRef.current) {
+        window.clearTimeout(roleSpeakerTimeoutRef.current);
+      }
+      if (roleResponseTimeoutRef.current) {
+        window.clearTimeout(roleResponseTimeoutRef.current);
+      }
       followSpeechTokenRef.current += 1;
+      roleSpeechTokenRef.current += 1;
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
       followAudioRef.current?.pause();
       followAudioRef.current = null;
+      roleAudioRef.current?.pause();
+      roleAudioRef.current = null;
+      setSpeakingRoleColumn(null);
+      setSpeakingRolePairId(null);
     };
   }, []);
 
@@ -1097,8 +1576,12 @@ function GameView({
     setDraggingAnswer(answer);
   };
 
-  const toggleLabelBox = (pairId: string) => {
+  const toggleLabelBox = (pairId: string, columnIndex?: number) => {
     if (!labelBoxesClickable) return;
+    if (showRoleSelectors) {
+      if (activeRoleColumn == null) return;
+      if (typeof columnIndex !== "number" || columnIndex !== activeRoleColumn) return;
+    }
     setSelectedPairId(pairId);
   };
 
@@ -1147,6 +1630,14 @@ function GameView({
     followAudioRef.current.onerror = null;
     followAudioRef.current.pause();
     followAudioRef.current = null;
+  }, []);
+
+  const stopRoleAudio = useCallback(() => {
+    if (!roleAudioRef.current) return;
+    roleAudioRef.current.onended = null;
+    roleAudioRef.current.onerror = null;
+    roleAudioRef.current.pause();
+    roleAudioRef.current = null;
   }, []);
 
   const speakFollowLabel = useCallback(
@@ -1210,10 +1701,217 @@ function GameView({
     [stopFollowAudio],
   );
 
+  const speakRoleSentence = useCallback(
+    (text: string, columnIndex: number, pairId: string, onComplete?: () => void) => {
+      const phrase = text.trim();
+      if (!phrase || typeof window === "undefined") return;
+
+      roleSpeechTokenRef.current += 1;
+      const token = roleSpeechTokenRef.current;
+      const startedAt = Date.now();
+      stopRoleAudio();
+      if (roleSpeakerTimeoutRef.current) {
+        window.clearTimeout(roleSpeakerTimeoutRef.current);
+        roleSpeakerTimeoutRef.current = null;
+      }
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      setSpeakingRoleColumn(columnIndex);
+      setSpeakingRolePairId(pairId);
+      const clearRoleSpeaker = () => {
+        if (roleSpeechTokenRef.current !== token) return;
+        const remainingMs = Math.max(
+          0,
+          ROLE_SPEAKER_MIN_VISIBLE_MS - (Date.now() - startedAt),
+        );
+        if (remainingMs > 0) {
+          roleSpeakerTimeoutRef.current = window.setTimeout(() => {
+            if (roleSpeechTokenRef.current !== token) return;
+            roleSpeakerTimeoutRef.current = null;
+            setSpeakingRoleColumn(null);
+            setSpeakingRolePairId(null);
+            onComplete?.();
+          }, remainingMs);
+          return;
+        }
+        setSpeakingRoleColumn(null);
+        setSpeakingRolePairId(null);
+        onComplete?.();
+      };
+
+      if (typeof SpeechSynthesisUtterance !== "undefined" && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        utterance.lang = "en-US";
+        utterance.pitch = 1;
+        utterance.rate = 0.84;
+        utterance.onend = () => {
+          clearRoleSpeaker();
+        };
+        utterance.onerror = () => {
+          clearRoleSpeaker();
+        };
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
+      clearRoleSpeaker();
+    },
+    [stopRoleAudio],
+  );
+
   const selectedSentence = pairs.find((pair) => pair.id === selectedPairId)?.label;
   const followCardLabels = images.map(
     (_, index) => pairs[index]?.label.trim() || `Name ${index + 1}`,
   );
+  const sentenceColumnSize =
+    sentenceColumns === 2 ? Math.ceil(pairs.length / sentenceColumns) : pairs.length;
+  const sentencePairsByColumn =
+    sentenceColumns === 2
+      ? [
+          pairs.slice(0, sentenceColumnSize),
+          pairs.slice(sentenceColumnSize, sentenceColumnSize * 2),
+        ]
+      : [pairs];
+  const showRoleSelectors = sentenceColumns === 2 && Boolean(roleSelection);
+  const firstRolePlayPair = sentencePairsByColumn[0]?.[0];
+  const resolvedRoleColumnIndex = activeRoleColumn;
+
+  const playRoleResponseAndAdvance = useCallback(() => {
+    const currentColumnIndex = resolvedRoleColumnIndex;
+    if (currentColumnIndex == null || !selectedPairId) return;
+
+    const currentColumnPairs = sentencePairsByColumn[currentColumnIndex] ?? [];
+    if (!currentColumnPairs.length) return;
+
+    const currentIndex = currentColumnPairs.findIndex((pair) => pair.id === selectedPairId);
+    if (currentIndex < 0) return;
+
+    const responseColumnIndex =
+      sentencePairsByColumn.length === 2 ? (currentColumnIndex === 0 ? 1 : 0) : currentColumnIndex;
+    const responsePair = sentencePairsByColumn[responseColumnIndex]?.[currentIndex];
+    const nextPair = currentColumnPairs[currentIndex + 1] ?? null;
+    const advanceToNextPair = () => {
+      if (!nextPair) return;
+      pendingRolePracticePairIdRef.current = null;
+      setSelectedPairId(nextPair.id);
+    };
+
+    if (roleResponseTimeoutRef.current) {
+      window.clearTimeout(roleResponseTimeoutRef.current);
+      roleResponseTimeoutRef.current = null;
+    }
+
+    if (responsePair?.label && responsePair.id) {
+      roleResponseTimeoutRef.current = window.setTimeout(() => {
+        roleResponseTimeoutRef.current = null;
+        speakRoleSentence(
+          responsePair.label,
+          responseColumnIndex,
+          responsePair.id,
+          advanceToNextPair,
+        );
+      }, ROLE_RESPONSE_PLAY_DELAY_MS);
+      return;
+    }
+
+    roleResponseTimeoutRef.current = window.setTimeout(() => {
+      roleResponseTimeoutRef.current = null;
+      advanceToNextPair();
+    }, ROLE_RESPONSE_PLAY_DELAY_MS);
+  }, [resolvedRoleColumnIndex, selectedPairId, sentencePairsByColumn, speakRoleSentence]);
+
+  const handleSpeakingResult = useCallback(
+    (tone: SpeechScoreTone) => {
+      if (!selectedPairId) return;
+      const passed = tone === "great" || tone === "pass";
+
+      if (showRoleSelectors) {
+        setStatus((current) => ({ ...current, [selectedPairId]: passed ? "correct" : "wrong" }));
+        if (passed) {
+          pendingRolePracticePairIdRef.current = null;
+          playRoleResponseAndAdvance();
+        }
+        return;
+      }
+
+      updateSpeakResult(selectedPairId, passed);
+    },
+    [playRoleResponseAndAdvance, selectedPairId, showRoleSelectors, updateSpeakResult],
+  );
+  const speakingPractice = useSpeakingPractice(
+    showTargetSentence ? (selectedSentence ?? "") : "",
+    handleSpeakingResult,
+  );
+
+  const activateRoleColumn = useCallback(
+    (columnIndex: number) => {
+      setActiveRoleColumn(columnIndex);
+      pendingRolePracticePairIdRef.current = null;
+      if (roleResponseTimeoutRef.current) {
+        window.clearTimeout(roleResponseTimeoutRef.current);
+        roleResponseTimeoutRef.current = null;
+      }
+      stopRoleAudio();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      setSpeakingRoleColumn(null);
+      setSpeakingRolePairId(null);
+
+      const targetColumnPairs = sentencePairsByColumn[columnIndex] ?? [];
+      const currentPair =
+        targetColumnPairs.find((pair) => pair.id === selectedPairId) ??
+        targetColumnPairs[0] ??
+        firstRolePlayPair;
+
+      if (currentPair?.id && currentPair.id !== selectedPairId) {
+        setSelectedPairId(currentPair.id);
+      }
+    },
+    [firstRolePlayPair, selectedPairId, sentencePairsByColumn, stopRoleAudio],
+  );
+
+  const startRolePractice = useCallback(
+    (pairId: string, columnIndex: number) => {
+      setActiveRoleColumn(columnIndex);
+      if (roleResponseTimeoutRef.current) {
+        window.clearTimeout(roleResponseTimeoutRef.current);
+        roleResponseTimeoutRef.current = null;
+      }
+      setStatus((current) =>
+        current[pairId] ? { ...current, [pairId]: undefined } : current,
+      );
+
+      if (selectedPairId === pairId) {
+        speakingPractice.toggleScoring();
+        return;
+      }
+
+      pendingRolePracticePairIdRef.current = pairId;
+      setSelectedPairId(pairId);
+    },
+    [selectedPairId, speakingPractice.toggleScoring],
+  );
+
+  const replayRoleSentence = useCallback(() => {
+    if (!selectedPairId || !selectedSentence) return;
+    speakRoleSentence(selectedSentence, resolvedRoleColumnIndex ?? 0, selectedPairId);
+  }, [resolvedRoleColumnIndex, selectedPairId, selectedSentence, speakRoleSentence]);
+
+  const goToNextRoleSentence = useCallback(() => {
+    playRoleResponseAndAdvance();
+  }, [playRoleResponseAndAdvance]);
+
+  useEffect(() => {
+    if (!showRoleSelectors) return;
+    if (!selectedPairId) return;
+    if (pendingRolePracticePairIdRef.current !== selectedPairId) return;
+
+    pendingRolePracticePairIdRef.current = null;
+    speakingPractice.toggleScoring();
+  }, [selectedPairId, showRoleSelectors, speakingPractice.toggleScoring]);
 
   if (pairs.length === 0) {
     return (
@@ -1326,69 +2024,180 @@ function GameView({
         </div>
 
         {showPairBoard && (
-          <div className={`flex flex-1 flex-col gap-3 ${showDropTargets ? "justify-between" : ""}`}>
-            {pairs.map((p) => {
-              const labelSelected = selectedPairId === p.id;
-              const labelColorClass = labelSelected
-                ? "border-amber-500 bg-amber-100 shadow-sm"
-                : "border-slate-700 bg-white";
-              const labelBoxClassName = `border-2 rounded-md px-4 font-bold text-slate-800 flex items-center transition ${labelColorClass} ${
-                showDropTargets
-                  ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
-                  : `min-h-16 w-full py-3 text-left leading-snug ${
-                      showTargetSentence ? "h-full text-2xl" : "max-w-[560px]"
-                    }`
-              } ${
-                labelBoxesClickable
-                  ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                  : ""
-              }`;
-
-              return (
+          <div
+            className={`flex-1 ${
+              sentenceColumns === 2 ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"
+            }`}
+          >
+            {sentencePairsByColumn.map((columnPairs, columnIndex) => (
+              <div
+                key={`sentence-column-${columnIndex}`}
+                className={
+                  sentenceColumns === 2
+                    ? "flex flex-col gap-3"
+                    : `flex flex-col gap-3 ${showDropTargets ? "justify-between" : ""}`
+                }
+              >
+                {showRoleSelectors && roleSelection && (
+                  <RolePlayRoleSelector
+                    selectedRole={
+                      columnIndex === 0 ? roleSelection.leftRole : roleSelection.rightRole
+                    }
+                    avatarSrc={
+                      columnIndex === 0
+                        ? ROLE_PLAY_NEUTRAL_AVATAR_LEFT
+                        : ROLE_PLAY_NEUTRAL_AVATAR_RIGHT
+                    }
+                    isActive={activeRoleColumn === columnIndex}
+                    onActivate={() => activateRoleColumn(columnIndex)}
+                  />
+                )}
                 <div
-                  key={p.id}
-                  className={`flex items-center gap-3 ${showDropTargets || showTargetSentence ? "flex-1" : ""}`}
+                  className={
+                    sentenceColumns === 2 ? "grid auto-rows-fr gap-3" : "flex flex-col gap-3"
+                  }
                 >
-                  {labelBoxesClickable ? (
-                    <button
-                      type="button"
-                      aria-pressed={labelSelected}
-                      onClick={() => toggleLabelBox(p.id)}
-                      className={labelBoxClassName}
-                    >
-                      {p.label}
-                    </button>
-                  ) : (
-                    <div className={labelBoxClassName}>{p.label}</div>
-                  )}
-                  {showDropTargets && (
-                    <>
-                      <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
-                      <DropZone
-                        pairId={p.id}
-                        status={status[p.id]}
-                        value={placed[p.id]}
-                        isPointerOver={activeDropZoneId === p.id}
-                        onDrop={(ans) => onDrop(p.id, ans)}
-                      />
-                    </>
-                  )}
+                  {columnPairs.map((p) => {
+                    const labelSelected = selectedPairId === p.id;
+                    const isRoleSentenceSpeaking =
+                      showRoleSelectors && speakingRolePairId === p.id;
+                    const roleSentenceStatus = showRoleSelectors ? status[p.id] : undefined;
+                    const showRoleMicButton =
+                      showRoleSelectors &&
+                      resolvedRoleColumnIndex === columnIndex &&
+                      labelSelected;
+                    const isSentenceListening =
+                      showRoleMicButton && labelSelected && speakingPractice.isListening;
+                    const labelColorClass =
+                      roleSentenceStatus === "correct"
+                        ? "border-green-500 bg-green-50 text-green-800 shadow-sm"
+                        : roleSentenceStatus === "wrong"
+                          ? "border-red-400 bg-red-50 text-red-700 shadow-sm"
+                          : labelSelected
+                            ? "border-amber-500 bg-amber-100 text-slate-800 shadow-sm"
+                            : "border-slate-700 bg-white text-slate-800";
+                    const labelBoxClassName = `border-2 rounded-md px-4 font-bold flex items-center transition ${labelColorClass} ${
+                      showDropTargets
+                        ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
+                        : `min-h-16 w-full py-3 text-left leading-snug ${
+                            showTargetSentence ? "h-full text-2xl" : "max-w-[560px]"
+                          }`
+                    } ${
+                      labelBoxesClickable
+                        ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                        : ""
+                    }`;
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex items-center gap-3 ${
+                          showDropTargets || showTargetSentence ? "flex-1" : ""
+                        }`}
+                      >
+                        {labelBoxesClickable ? (
+                          <button
+                            type="button"
+                            aria-pressed={labelSelected}
+                            onClick={() => toggleLabelBox(p.id, columnIndex)}
+                            className={labelBoxClassName}
+                          >
+                            <span className="block w-full leading-snug">
+                              {p.label}
+                              {isRoleSentenceSpeaking && (
+                                <span
+                                  aria-hidden="true"
+                                  className="relative ml-2 inline-flex h-5 w-5 items-center justify-center align-middle"
+                                >
+                                  <span className="absolute inset-0 rounded-full bg-amber-300/60 animate-ping" />
+                                  <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-amber-600">
+                                    <Volume2 size={14} />
+                                  </span>
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ) : (
+                          <div className={labelBoxClassName}>{p.label}</div>
+                        )}
+                        {showRoleMicButton && (
+                          <button
+                            type="button"
+                            aria-label={`Start pronunciation check for ${p.label}`}
+                            onClick={() => startRolePractice(p.id, columnIndex)}
+                            className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                              isSentenceListening
+                                ? "border-rose-300 bg-rose-500 text-white shadow-[0_10px_20px_rgba(244,63,94,0.2)]"
+                                : "border-amber-200 bg-white text-amber-600 shadow-sm hover:border-amber-300 hover:bg-amber-50"
+                            }`}
+                          >
+                            {isSentenceListening ? <Square size={16} /> : <Mic size={18} />}
+                          </button>
+                        )}
+                        {showDropTargets && (
+                          <>
+                            <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
+                            <DropZone
+                              pairId={p.id}
+                              status={status[p.id]}
+                              value={placed[p.id]}
+                              isPointerOver={activeDropZoneId === p.id}
+                              onDrop={(ans) => onDrop(p.id, ans)}
+                            />
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {showTargetSentence && selectedSentence && (
-        <SpeakingPracticePanel
-          targetSentence={selectedSentence}
-          onResult={(tone) => {
-            if (selectedPairId) {
-              updateSpeakResult(selectedPairId, tone === "great" || tone === "pass");
+      {showTargetSentence && selectedSentence && !showRoleSelectors && (
+        <SpeakingPracticePanel targetSentence={selectedSentence} practice={speakingPractice} />
+      )}
+
+      {showTargetSentence && showRoleSelectors && (
+        selectedSentence && resolvedRoleColumnIndex != null ? (
+          <SpeakingPracticePanel
+            targetSentence={selectedSentence}
+            practice={speakingPractice}
+            showPrimaryButton={false}
+            auxiliaryActions={
+              speakingPractice.scoreResult?.tone === "practice" ? (
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={replayRoleSentence}
+                    className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+                  >
+                    <Volume2 size={16} />
+                    整句重读
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextRoleSentence}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    下一题
+                  </button>
+                </div>
+              ) : null
             }
-          }}
-        />
+            emptyHint="点击句子后面的麦克风开始识别发音。"
+          />
+        ) : (
+          <section className="mt-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-8 py-5 text-center shadow-sm">
+              <p className="text-sm font-semibold text-slate-500">
+                先选择左侧或右侧角色，再点击对应句子后面的麦克风开始识别。
+              </p>
+            </div>
+          </section>
+        )
       )}
 
       {showAnswerTiles && (
@@ -1435,218 +2244,73 @@ function GameView({
 
 function SpeakingPracticePanel({
   targetSentence,
-  onResult,
+  practice,
+  showPrimaryButton = true,
+  auxiliaryActions,
+  emptyHint = "点击按钮开始语音识别。",
 }: {
   targetSentence: string;
-  onResult?: (tone: SpeechScoreTone) => void;
+  practice: SpeakingPracticeController;
+  showPrimaryButton?: boolean;
+  auxiliaryActions?: React.ReactNode;
+  emptyHint?: string;
 }) {
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const correctAudioRef = useRef<HTMLAudioElement | null>(null);
-  const resultAudioRef = useRef<HTMLAudioElement | null>(null);
-  const tryAgainAudioRef = useRef<HTMLAudioElement | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isListening, setIsListening] = useState(false);
-  const [scoreResult, setScoreResult] = useState<SpeechScoreResult | null>(null);
-  const [transcript, setTranscript] = useState("");
-
-  useEffect(() => {
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
-    setErrorMessage("");
-    setIsListening(false);
-    setScoreResult(null);
-    setTranscript("");
-  }, [targetSentence]);
-
-  useEffect(() => {
-    correctAudioRef.current = new Audio(correctSound);
-    tryAgainAudioRef.current = new Audio(tryAgainSound);
-    correctAudioRef.current.preload = "auto";
-    tryAgainAudioRef.current.preload = "auto";
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      recognitionRef.current?.abort();
-      correctAudioRef.current?.pause();
-      tryAgainAudioRef.current?.pause();
-    };
-  }, []);
-
-  const resetAudio = useCallback((audio: HTMLAudioElement) => {
-    audio.pause();
-    try {
-      audio.currentTime = 0;
-    } catch (error) {
-      void error;
-    }
-  }, []);
-
-  const primeResultAudio = useCallback(() => {
-    const audios = [correctAudioRef.current, tryAgainAudioRef.current].filter(
-      (audio): audio is HTMLAudioElement => Boolean(audio),
-    );
-
-    audios.forEach((audio) => {
-      audio.muted = true;
-      void audio
-        .play()
-        .then(() => {
-          resetAudio(audio);
-          audio.muted = false;
-        })
-        .catch(() => {
-          audio.muted = false;
-        });
-    });
-  }, [resetAudio]);
-
-  const playResultAudio = useCallback(
-    (tone: SpeechScoreTone) => {
-      const audio =
-        tone === "great" || tone === "pass" ? correctAudioRef.current : tryAgainAudioRef.current;
-      if (!audio) return;
-
-      resultAudioRef.current?.pause();
-      resultAudioRef.current = audio;
-      resetAudio(audio);
-      audio.muted = false;
-      audio.play().catch(() => {});
-    },
-    [resetAudio],
-  );
-
-  useEffect(() => {
-    if (scoreResult) playResultAudio(scoreResult.tone);
-  }, [playResultAudio, scoreResult]);
-
-  const applyScore = (spokenText: string) => {
-    const cleanTranscript = spokenText.trim();
-    setTranscript(cleanTranscript);
-    const nextScoreResult = scoreSpeech(targetSentence, cleanTranscript);
-    setScoreResult(nextScoreResult);
-    onResult?.(nextScoreResult.tone);
-  };
-
-  const startRealScoring = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-
-    primeResultAudio();
-
-    const Recognition = getSpeechRecognitionConstructor();
-    if (!Recognition) {
-      setErrorMessage("当前浏览器不支持语音识别。请使用 Chrome 后再试。");
-      setScoreResult(null);
-      setTranscript("");
-      return;
-    }
-
-    const recognition = new Recognition();
-    let latestTranscript = "";
-    let hadError = false;
-    recognitionRef.current = recognition;
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const parts: string[] = [];
-      for (let index = 0; index < event.results.length; index++) {
-        const transcriptPart = event.results[index][0]?.transcript;
-        if (transcriptPart) parts.push(transcriptPart);
-      }
-      latestTranscript = parts.join(" ").trim();
-      setTranscript(latestTranscript);
-    };
-    recognition.onerror = (event) => {
-      hadError = true;
-      setIsListening(false);
-      const isPermissionError =
-        event.error === "not-allowed" || event.error === "service-not-allowed";
-      setErrorMessage(
-        isPermissionError
-          ? "麦克风权限未开启。请允许浏览器使用麦克风后再试。"
-          : "语音识别失败，请确认麦克风可用后再试。",
-      );
-    };
-    recognition.onend = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-      if (hadError) return;
-      if (!latestTranscript) {
-        setErrorMessage("没有识别到朗读内容，请靠近麦克风再试一次。");
-        setScoreResult(null);
-        return;
-      }
-      setErrorMessage("");
-      applyScore(latestTranscript);
-    };
-
-    setErrorMessage("");
-    setScoreResult(null);
-    setTranscript("");
-    setIsListening(true);
-    try {
-      recognition.start();
-    } catch (error) {
-      void error;
-      setIsListening(false);
-      setErrorMessage("语音识别无法启动，请稍后再试。");
-    }
-  };
-
   const resultColorClass =
-    scoreResult?.tone === "great"
+    practice.scoreResult?.tone === "great"
       ? "border-green-200 bg-green-50 text-green-700"
-      : scoreResult?.tone === "pass"
+      : practice.scoreResult?.tone === "pass"
         ? "border-yellow-200 bg-yellow-50 text-yellow-700"
         : "border-red-200 bg-red-50 text-red-700";
   const resultLabel =
-    scoreResult?.tone === "great"
+    practice.scoreResult?.tone === "great"
       ? "Excellent!"
-      : scoreResult?.tone === "pass"
+      : practice.scoreResult?.tone === "pass"
         ? "Good!"
-        : scoreResult
+        : practice.scoreResult
           ? "Try again."
           : "";
-  const sentenceWordTokens = getSentenceWordTokens(targetSentence, transcript);
 
   return (
     <section className="mt-4">
       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-8 py-3 shadow-sm">
-        <div className="grid items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
+        <div
+          className={`grid items-center gap-4 ${
+            showPrimaryButton ? "md:grid-cols-[1fr_auto_1fr]" : "md:grid-cols-[1fr_auto]"
+          }`}
+        >
           <div className="text-left">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
               TARGET SENTENCE / 目标句子
             </p>
             <p className="mt-1 text-2xl font-bold leading-tight text-slate-900">{targetSentence}</p>
           </div>
-          <div className="justify-self-center text-center">
-            <button
-              type="button"
-              onClick={startRealScoring}
-              className={`inline-flex min-h-14 items-center justify-center gap-4 rounded-2xl px-10 text-xl font-bold text-white shadow-xl transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 ${
-                isListening
-                  ? "bg-gradient-to-r from-red-500 to-pink-500"
-                  : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-              }`}
-            >
-              <Mic size={28} />
-              {isListening ? "正在听...点击结束" : "I can read"}
-            </button>
+          <div className={showPrimaryButton ? "justify-self-center text-center" : "justify-self-end"}>
+            {showPrimaryButton ? (
+              <button
+                type="button"
+                onClick={practice.toggleScoring}
+                className={`inline-flex min-h-14 items-center justify-center gap-4 rounded-2xl px-10 text-xl font-bold text-white shadow-xl transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 ${
+                  practice.isListening
+                    ? "bg-gradient-to-r from-red-500 to-pink-500"
+                    : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                }`}
+              >
+                <Mic size={28} />
+                {practice.isListening ? "正在听...点击结束" : "I can read"}
+              </button>
+            ) : (
+              <p className="text-sm font-semibold text-slate-500">{emptyHint}</p>
+            )}
           </div>
-          <div aria-hidden="true" />
+          {showPrimaryButton && <div aria-hidden="true" />}
         </div>
-        {(transcript || scoreResult || errorMessage) && (
+        {(practice.transcript || practice.scoreResult || practice.errorMessage || auxiliaryActions) && (
           <div className="mx-auto mt-6 max-w-3xl space-y-3 text-left">
-            {transcript && (
+            {practice.transcript && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">识别结果</p>
                 <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-base font-semibold">
-                  {sentenceWordTokens.map((token, index) => (
+                  {practice.sentenceWordTokens.map((token, index) => (
                     <span
                       key={`${token.text}-${index}`}
                       className={
@@ -1663,17 +2327,18 @@ function SpeakingPracticePanel({
                 </p>
               </div>
             )}
-            {scoreResult && (
+            {practice.scoreResult && (
               <div className={`rounded-xl border px-4 py-3 ${resultColorClass}`}>
                 <p className="text-2xl font-bold">{resultLabel}</p>
-                <p className="mt-1 text-sm font-semibold">{scoreResult.feedback}</p>
+                <p className="mt-1 text-sm font-semibold">{practice.scoreResult.feedback}</p>
               </div>
             )}
-            {errorMessage && (
+            {practice.errorMessage && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
-                {errorMessage}
+                {practice.errorMessage}
               </div>
             )}
+            {auxiliaryActions}
           </div>
         )}
       </div>
@@ -1866,7 +2531,10 @@ function SettingsView({
   defaultTitle,
   timerSettings,
   setTimerSettings,
+  sentenceColumns,
+  fixedPairCount,
   showAnswerFields,
+  sentenceEditorHelpText,
 }: {
   pairs: Pair[];
   setPairs: React.Dispatch<React.SetStateAction<Pair[]>>;
@@ -1878,9 +2546,17 @@ function SettingsView({
   defaultTitle: string;
   timerSettings: TimerSettings;
   setTimerSettings: React.Dispatch<React.SetStateAction<TimerSettings>>;
+  sentenceColumns: 1 | 2;
+  fixedPairCount?: number;
   showAnswerFields: boolean;
+  sentenceEditorHelpText?: string;
 }) {
   const usesFixedButtonNames = imageLayout === "row4" && !showAnswerFields;
+  const usesRolePlayColumns =
+    imageLayout === "single" && sentenceColumns === 2 && !showAnswerFields;
+  const rolePlaySplitIndex = Math.ceil((fixedPairCount ?? pairs.length) / 2);
+  const rolePlayLeftPairs = pairs.slice(0, rolePlaySplitIndex);
+  const rolePlayRightPairs = pairs.slice(rolePlaySplitIndex, rolePlaySplitIndex * 2);
 
   const update = (id: string, field: "label" | "answer", value: string) => {
     setPairs((ps) => ps.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
@@ -1909,7 +2585,11 @@ function SettingsView({
   };
 
   return (
-    <div className={`mx-auto space-y-6 ${usesFixedButtonNames ? "max-w-4xl" : "max-w-2xl"}`}>
+    <div
+      className={`mx-auto space-y-6 ${
+        usesFixedButtonNames || usesRolePlayColumns ? "max-w-4xl" : "max-w-2xl"
+      }`}
+    >
       <div className="bg-white rounded-xl border p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-1">Page title</h2>
         <p className="text-sm text-slate-500 mb-4">Shown in the header on the home page.</p>
@@ -2054,7 +2734,7 @@ function SettingsView({
         </div>
       </div>
 
-      {!usesFixedButtonNames && (
+      {!usesFixedButtonNames && !usesRolePlayColumns && (
         <div className="bg-white rounded-xl border p-6">
           <h2 className="text-lg font-semibold text-slate-800 mb-1">
             {showAnswerFields ? "Match pairs" : "Sentences"}
@@ -2062,7 +2742,7 @@ function SettingsView({
           <p className="text-sm text-slate-500 mb-6">
             {showAnswerFields
               ? "The label appears in the solid box on the left. The answer is the correct yellow tile to drag into its dashed box."
-              : "Edit the sentence buttons shown on the activity page."}
+              : (sentenceEditorHelpText ?? "Edit the sentence buttons shown on the activity page.")}
           </p>
           <div
             className={`grid gap-3 text-xs font-medium text-slate-500 uppercase mb-2 px-1 ${
@@ -2111,6 +2791,49 @@ function SettingsView({
           >
             <Plus size={16} /> {showAnswerFields ? "Add pair" : "Add sentence"}
           </button>
+        </div>
+      )}
+
+      {usesRolePlayColumns && (
+        <div className="bg-white rounded-xl border p-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">Sentences</h2>
+          <p className="text-sm text-slate-500 mb-6">
+            {sentenceEditorHelpText ?? "Edit the sentence buttons shown on the activity page."}
+          </p>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-3">
+              <div className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Left column
+              </div>
+              {rolePlayLeftPairs.map((pair, index) => (
+                <label key={pair.id} className="block text-sm font-medium text-slate-700">
+                  Line {index + 1}
+                  <input
+                    value={pair.label}
+                    onChange={(e) => update(pair.id, "label", e.target.value)}
+                    placeholder="Look at the tree."
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="space-y-3">
+              <div className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Right column
+              </div>
+              {rolePlayRightPairs.map((pair, index) => (
+                <label key={pair.id} className="block text-sm font-medium text-slate-700">
+                  Line {index + 1}
+                  <input
+                    value={pair.label}
+                    onChange={(e) => update(pair.id, "label", e.target.value)}
+                    placeholder="The branches are green."
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
