@@ -1861,16 +1861,46 @@ function GameView({
       setSpeakingRolePairId(null);
 
       const targetColumnPairs = sentencePairsByColumn[columnIndex] ?? [];
+      const previewColumnIndex =
+        sentencePairsByColumn.length === 2 ? (columnIndex === 0 ? 1 : 0) : columnIndex;
+      const previewColumnPairs = sentencePairsByColumn[previewColumnIndex] ?? [];
+      const selectedIndexInTargetColumn = targetColumnPairs.findIndex(
+        (pair) => pair.id === selectedPairId,
+      );
+      const selectedIndexInPreviewColumn = previewColumnPairs.findIndex(
+        (pair) => pair.id === selectedPairId,
+      );
+      const alignedPairIndex =
+        selectedIndexInTargetColumn >= 0
+          ? selectedIndexInTargetColumn
+          : selectedIndexInPreviewColumn >= 0
+            ? selectedIndexInPreviewColumn
+            : 0;
       const currentPair =
-        targetColumnPairs.find((pair) => pair.id === selectedPairId) ??
-        targetColumnPairs[0] ??
-        firstRolePlayPair;
+        targetColumnPairs[alignedPairIndex] ?? targetColumnPairs[0] ?? firstRolePlayPair;
 
       if (currentPair?.id && currentPair.id !== selectedPairId) {
         setSelectedPairId(currentPair.id);
       }
+
+      const previewPair = previewColumnPairs[alignedPairIndex] ?? previewColumnPairs[0];
+      if (
+        showRoleSelectors &&
+        sentencePairsByColumn.length === 2 &&
+        previewPair?.label &&
+        previewPair.id
+      ) {
+        speakRoleSentence(previewPair.label, previewColumnIndex, previewPair.id);
+      }
     },
-    [firstRolePlayPair, selectedPairId, sentencePairsByColumn, stopRoleAudio],
+    [
+      firstRolePlayPair,
+      selectedPairId,
+      sentencePairsByColumn,
+      showRoleSelectors,
+      speakRoleSentence,
+      stopRoleAudio,
+    ],
   );
 
   const startRolePractice = useCallback(
