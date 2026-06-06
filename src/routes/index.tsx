@@ -686,6 +686,52 @@ function Index() {
     }
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const requestMicrophonePermission = async () => {
+      if (typeof window === "undefined") return;
+      if (!navigator.mediaDevices?.getUserMedia) return;
+
+      const permissionsApi = (
+        navigator as Navigator & {
+          permissions?: {
+            query: (descriptor: { name: string }) => Promise<{ state: string }>;
+          };
+        }
+      ).permissions;
+
+      try {
+        const permissionStatus = permissionsApi
+          ? await permissionsApi.query({ name: "microphone" })
+          : null;
+
+        if (permissionStatus?.state === "granted" || permissionStatus?.state === "denied") {
+          return;
+        }
+      } catch (error) {
+        void error;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (error) {
+        void error;
+      }
+    };
+
+    void requestMicrophonePermission();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selectWorkspace = (id: WorkspaceConfig["id"]) => {
     setWorkspaceId(id);
     setTab("home");
@@ -1777,6 +1823,25 @@ function GameView({
   const showRoleSelectors = sentenceColumns === 2 && Boolean(roleSelection);
   const firstRolePlayPair = sentencePairsByColumn[0]?.[0];
   const resolvedRoleColumnIndex = activeRoleColumn;
+  const getAlignedRolePairIndex = useCallback(
+    (columnIndex: number) => {
+      const targetColumnPairs = sentencePairsByColumn[columnIndex] ?? [];
+      const oppositeColumnIndex =
+        sentencePairsByColumn.length === 2 ? (columnIndex === 0 ? 1 : 0) : columnIndex;
+      const oppositeColumnPairs = sentencePairsByColumn[oppositeColumnIndex] ?? [];
+      const selectedIndexInTargetColumn = targetColumnPairs.findIndex(
+        (pair) => pair.id === selectedPairId,
+      );
+      const selectedIndexInOppositeColumn = oppositeColumnPairs.findIndex(
+        (pair) => pair.id === selectedPairId,
+      );
+
+      if (selectedIndexInTargetColumn >= 0) return selectedIndexInTargetColumn;
+      if (selectedIndexInOppositeColumn >= 0) return selectedIndexInOppositeColumn;
+      return 0;
+    },
+    [selectedPairId, sentencePairsByColumn],
+  );
 
   const playRoleResponseAndAdvance = useCallback(() => {
     const currentColumnIndex = resolvedRoleColumnIndex;
@@ -1801,6 +1866,22 @@ function GameView({
     if (roleResponseTimeoutRef.current) {
       window.clearTimeout(roleResponseTimeoutRef.current);
       roleResponseTimeoutRef.current = null;
+    }
+
+    if (sentencePairsByColumn.length === 2 && currentColumnIndex === 1) {
+      roleResponseTimeoutRef.current = window.setTimeout(() => {
+        roleResponseTimeoutRef.current = null;
+        if (!nextPair?.id) return;
+
+        pendingRolePracticePairIdRef.current = null;
+        setSelectedPairId(nextPair.id);
+
+        const nextPreviewPair = sentencePairsByColumn[0]?.[currentIndex + 1];
+        if (nextPreviewPair?.label && nextPreviewPair.id) {
+          speakRoleSentence(nextPreviewPair.label, 0, nextPreviewPair.id);
+        }
+      }, ROLE_RESPONSE_PLAY_DELAY_MS);
+      return;
     }
 
     if (responsePair?.label && responsePair.id) {
@@ -1864,18 +1945,7 @@ function GameView({
       const previewColumnIndex =
         sentencePairsByColumn.length === 2 ? (columnIndex === 0 ? 1 : 0) : columnIndex;
       const previewColumnPairs = sentencePairsByColumn[previewColumnIndex] ?? [];
-      const selectedIndexInTargetColumn = targetColumnPairs.findIndex(
-        (pair) => pair.id === selectedPairId,
-      );
-      const selectedIndexInPreviewColumn = previewColumnPairs.findIndex(
-        (pair) => pair.id === selectedPairId,
-      );
-      const alignedPairIndex =
-        selectedIndexInTargetColumn >= 0
-          ? selectedIndexInTargetColumn
-          : selectedIndexInPreviewColumn >= 0
-            ? selectedIndexInPreviewColumn
-            : 0;
+      const alignedPairIndex = getAlignedRolePairIndex(columnIndex);
       const currentPair =
         targetColumnPairs[alignedPairIndex] ?? targetColumnPairs[0] ?? firstRolePlayPair;
 
@@ -1887,6 +1957,7 @@ function GameView({
       if (
         showRoleSelectors &&
         sentencePairsByColumn.length === 2 &&
+        columnIndex === 1 &&
         previewPair?.label &&
         previewPair.id
       ) {
@@ -1895,6 +1966,7 @@ function GameView({
     },
     [
       firstRolePlayPair,
+      getAlignedRolePairIndex,
       selectedPairId,
       sentencePairsByColumn,
       showRoleSelectors,
