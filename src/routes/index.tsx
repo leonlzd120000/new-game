@@ -1823,25 +1823,6 @@ function GameView({
   const showRoleSelectors = sentenceColumns === 2 && Boolean(roleSelection);
   const firstRolePlayPair = sentencePairsByColumn[0]?.[0];
   const resolvedRoleColumnIndex = activeRoleColumn;
-  const getAlignedRolePairIndex = useCallback(
-    (columnIndex: number) => {
-      const targetColumnPairs = sentencePairsByColumn[columnIndex] ?? [];
-      const oppositeColumnIndex =
-        sentencePairsByColumn.length === 2 ? (columnIndex === 0 ? 1 : 0) : columnIndex;
-      const oppositeColumnPairs = sentencePairsByColumn[oppositeColumnIndex] ?? [];
-      const selectedIndexInTargetColumn = targetColumnPairs.findIndex(
-        (pair) => pair.id === selectedPairId,
-      );
-      const selectedIndexInOppositeColumn = oppositeColumnPairs.findIndex(
-        (pair) => pair.id === selectedPairId,
-      );
-
-      if (selectedIndexInTargetColumn >= 0) return selectedIndexInTargetColumn;
-      if (selectedIndexInOppositeColumn >= 0) return selectedIndexInOppositeColumn;
-      return 0;
-    },
-    [selectedPairId, sentencePairsByColumn],
-  );
 
   const playRoleResponseAndAdvance = useCallback(() => {
     const currentColumnIndex = resolvedRoleColumnIndex;
@@ -1945,15 +1926,13 @@ function GameView({
       const previewColumnIndex =
         sentencePairsByColumn.length === 2 ? (columnIndex === 0 ? 1 : 0) : columnIndex;
       const previewColumnPairs = sentencePairsByColumn[previewColumnIndex] ?? [];
-      const alignedPairIndex = getAlignedRolePairIndex(columnIndex);
-      const currentPair =
-        targetColumnPairs[alignedPairIndex] ?? targetColumnPairs[0] ?? firstRolePlayPair;
+      const currentPair = targetColumnPairs[0] ?? firstRolePlayPair;
 
       if (currentPair?.id && currentPair.id !== selectedPairId) {
         setSelectedPairId(currentPair.id);
       }
 
-      const previewPair = previewColumnPairs[alignedPairIndex] ?? previewColumnPairs[0];
+      const previewPair = previewColumnPairs[0];
       if (
         showRoleSelectors &&
         sentencePairsByColumn.length === 2 &&
@@ -1966,7 +1945,6 @@ function GameView({
     },
     [
       firstRolePlayPair,
-      getAlignedRolePairIndex,
       selectedPairId,
       sentencePairsByColumn,
       showRoleSelectors,
