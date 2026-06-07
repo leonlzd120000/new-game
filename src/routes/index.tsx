@@ -1221,6 +1221,7 @@ function getSpeechRecognitionConstructor() {
 function useSpeakingPractice(
   targetSentence: string,
   onResult?: (tone: SpeechScoreTone) => void,
+  resetSignal = 0,
 ): SpeakingPracticeController {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const correctAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1238,7 +1239,7 @@ function useSpeakingPractice(
     setIsListening(false);
     setScoreResult(null);
     setTranscript("");
-  }, [targetSentence]);
+  }, [resetSignal, targetSentence]);
 
   useEffect(() => {
     correctAudioRef.current = new Audio(correctSound);
@@ -1442,6 +1443,7 @@ function GameView({
   const [remainingSeconds, setRemainingSeconds] = useState(timerDurationSeconds);
   const [timerRunning, setTimerRunning] = useState(false);
   const speakCelebrationTimerRef = useRef<number | null>(null);
+  const [practiceResetKey, setPracticeResetKey] = useState(0);
   const followAudioRef = useRef<HTMLAudioElement | null>(null);
   const followSpeechTokenRef = useRef(0);
   const [speakingCardIndex, setSpeakingCardIndex] = useState<number | null>(null);
@@ -1467,12 +1469,6 @@ function GameView({
       return showTargetSentence ? (pairs[0]?.id ?? null) : null;
     });
   }, [pairs, showTargetSentence]);
-
-  useEffect(() => {
-    if (!allCorrect) return;
-    const audio = new Audio(victorySound);
-    audio.play().catch(() => {});
-  }, [allCorrect]);
 
   useEffect(() => {
     setTimerRunning(false);
@@ -1631,7 +1627,7 @@ function GameView({
     setSelectedPairId(pairId);
   };
 
-  const triggerSpeakCelebration = () => {
+  const triggerSpeakCelebration = useCallback(() => {
     if (speakCelebrationTimerRef.current) {
       window.clearTimeout(speakCelebrationTimerRef.current);
     }
@@ -1646,7 +1642,12 @@ function GameView({
       },
       (CELEBRATION_BASE_SECONDS + CELEBRATION_EXTRA_SECONDS) * 1000,
     );
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!allCorrect && !roleRoundComplete) return;
+    triggerSpeakCelebration();
+  }, [allCorrect, roleRoundComplete, triggerSpeakCelebration]);
 
   const updateSpeakResult = (pairId: string, passed: boolean) => {
     if (!passed) {
@@ -1823,6 +1824,13 @@ function GameView({
   const showRoleSelectors = sentenceColumns === 2 && Boolean(roleSelection);
   const firstRolePlayPair = sentencePairsByColumn[0]?.[0];
   const resolvedRoleColumnIndex = activeRoleColumn;
+  const activeRolePairs =
+    showRoleSelectors && resolvedRoleColumnIndex != null
+      ? (sentencePairsByColumn[resolvedRoleColumnIndex] ?? [])
+      : [];
+  const roleRoundComplete =
+    activeRolePairs.length > 0 &&
+    activeRolePairs.every((pair) => status[pair.id] === "correct");
 
   const playRoleResponseAndAdvance = useCallback(() => {
     const currentColumnIndex = resolvedRoleColumnIndex;
@@ -1905,6 +1913,7 @@ function GameView({
   const speakingPractice = useSpeakingPractice(
     showTargetSentence ? (selectedSentence ?? "") : "",
     handleSpeakingResult,
+    practiceResetKey,
   );
 
   const activateRoleColumn = useCallback(
@@ -1915,10 +1924,17 @@ function GameView({
         window.clearTimeout(roleResponseTimeoutRef.current);
         roleResponseTimeoutRef.current = null;
       }
+      if (speakCelebrationTimerRef.current) {
+        window.clearTimeout(speakCelebrationTimerRef.current);
+        speakCelebrationTimerRef.current = null;
+      }
       stopRoleAudio();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
+      setSpeakCelebrating(false);
+      setStatus({});
+      setPracticeResetKey((current) => current + 1);
       setSpeakingRoleColumn(null);
       setSpeakingRolePairId(null);
 
@@ -2003,7 +2019,7 @@ function GameView({
 
   return (
     <div>
-      <CelebrationAnimation play={allCorrect || speakCelebrating} />
+      <CelebrationAnimation play={allCorrect || roleRoundComplete || speakCelebrating} />
 
       <div className="mb-3 flex items-center justify-end gap-3">
         <div className="flex w-64 justify-center rounded-lg border bg-white/80 px-3 py-2 shadow-sm">
@@ -2304,7 +2320,7 @@ function GameView({
         </div>
       )}
 
-      {allCorrect && (
+      {(allCorrect || roleRoundComplete) && (
         <p className="mt-6 text-center text-2xl font-bold text-green-600">🎉 Great job!</p>
       )}
 
