@@ -1644,11 +1644,6 @@ function GameView({
     );
   }, []);
 
-  useEffect(() => {
-    if (!allCorrect && !roleRoundComplete) return;
-    triggerSpeakCelebration();
-  }, [allCorrect, roleRoundComplete, triggerSpeakCelebration]);
-
   const updateSpeakResult = (pairId: string, passed: boolean) => {
     if (!passed) {
       setSpeakSequenceIndex(0);
@@ -1831,6 +1826,11 @@ function GameView({
   const roleRoundComplete =
     activeRolePairs.length > 0 &&
     activeRolePairs.every((pair) => status[pair.id] === "correct");
+
+  useEffect(() => {
+    if (!allCorrect && !roleRoundComplete) return;
+    triggerSpeakCelebration();
+  }, [allCorrect, roleRoundComplete, triggerSpeakCelebration]);
 
   const playRoleResponseAndAdvance = useCallback(() => {
     const currentColumnIndex = resolvedRoleColumnIndex;
