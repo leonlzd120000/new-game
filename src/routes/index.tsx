@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import lottie from "lottie-web/build/player/lottie_light";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   X,
@@ -139,6 +139,10 @@ type PlaceholderWorkspaceConfig = WorkspaceBaseConfig & {
   description: string;
 };
 type WorkspaceConfig = ActivityWorkspaceConfig | PlaceholderWorkspaceConfig;
+type LearningUnit = {
+  id: string;
+  label: string;
+};
 
 const STORAGE_KEY = "tree-match-pairs-v1";
 const IMAGE_KEY = "tree-match-image-v1";
@@ -166,6 +170,7 @@ const ROLE_PLAY_PAIRS_DEFAULT_VERSION_KEY = "role-play-pairs-default-version";
 const ROLE_PLAY_LEFT_ROLE_KEY = "role-play-left-role-v1";
 const ROLE_PLAY_RIGHT_ROLE_KEY = "role-play-right-role-v1";
 const WORKSPACE_STORAGE_KEY = "active-workspace-v1";
+const UNIT_STORAGE_KEY = "active-learning-unit-v1";
 const MATCH_TIMER_DEFAULT_VERSION = "2";
 const SPEAK_TIMER_DEFAULT_VERSION = "3";
 const FOLLOW_PAIRS_DEFAULT_VERSION = "1";
@@ -174,6 +179,12 @@ const DEFAULT_TITLE = "Match";
 const FOLLOW_DEFAULT_TITLE = "Follow";
 const READ_DEFAULT_TITLE = "Read";
 const ROLE_PLAY_DEFAULT_TITLE = "Role play";
+const LEARNING_UNITS: LearningUnit[] = [
+  { id: "4b-m3u2-time", label: "4B M3U2 Time" },
+  { id: "4b-m4u2-festivals-in-china", label: "4B M4U2 Festivals in China" },
+];
+const LEARNING_UNIT_IDS = LEARNING_UNITS.map((unit) => unit.id);
+const DEFAULT_LEARNING_UNIT_ID = LEARNING_UNITS[0].id;
 
 function createRoleAvatar(svg: string) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
@@ -264,6 +275,12 @@ const FOLLOW_DEFAULT_PAIRS: Pair[] = [
   { id: "3", label: "Brush teeth", answer: "brush teeth" },
   { id: "4", label: "Go to school", answer: "go to school" },
 ];
+const TIME_UNIT_FOLLOW_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "seven o’clock", answer: "seven o’clock" },
+  { id: "2", label: "a quarter past seven", answer: "a quarter past seven" },
+  { id: "3", label: "half past seven", answer: "half past seven" },
+  { id: "4", label: "a quarter to eight", answer: "a quarter to eight" },
+];
 const FOLLOW_AUDIO_BY_LABEL: Record<string, string> = {
   "get up": followGetUpAudio,
   "wash face": followWashFaceAudio,
@@ -325,10 +342,57 @@ const ROLE_PLAY_DEFAULT_PAIRS: Pair[] = [
     answer: "flowers",
   },
 ];
+const TIME_UNIT_MATCH_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "seven o’clock", answer: "get up" },
+  { id: "2", label: "a quarter past seven", answer: "brush my teeth" },
+  { id: "3", label: "half past seven", answer: "wash my face" },
+  { id: "4", label: "a quarter to seven", answer: "have breakfast" },
+];
+const TIME_UNIT_READ_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "It’s seven o’clock.", answer: "seven" },
+  { id: "2", label: "I’m getting up.", answer: "getting up" },
+  { id: "3", label: "It’s half past seven.", answer: "half past seven" },
+  { id: "4", label: "I’m washing my face.", answer: "washing my face" },
+];
+const TIME_UNIT_ROLE_PLAY_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "What time is it?", answer: "time" },
+  { id: "2", label: "What are you doing?", answer: "doing" },
+  { id: "3", label: "It’s a quarter to eight.", answer: "quarter to eight" },
+  { id: "4", label: "I’m having breakfast.", answer: "having breakfast" },
+];
+const FESTIVALS_UNIT_FOLLOW_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "the Spring Festival", answer: "the Spring Festival" },
+  { id: "2", label: "the Dragon Boat Festival", answer: "the Dragon Boat Festival" },
+  { id: "3", label: "the Mid-Autumn Festival", answer: "the Mid-Autumn Festival" },
+  { id: "4", label: "the Double Ninth Festival", answer: "the Double Ninth Festival" },
+];
+const FESTIVALS_UNIT_MATCH_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "the Spring Festival", answer: "dumplings" },
+  { id: "2", label: "the Dragon Boat Festival", answer: "rice dumplings" },
+  { id: "3", label: "the Mid-Autumn Festival", answer: "mooncakes" },
+  { id: "4", label: "the Double Ninth Festival", answer: "Double Ninth cakes" },
+];
+const FESTIVALS_UNIT_READ_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "The Spring Festival is in January or February.", answer: "Spring Festival" },
+  { id: "2", label: "People have a big dinner.", answer: "big dinner" },
+  { id: "3", label: "People eat dumplings.", answer: "dumplings" },
+];
+const FESTIVALS_UNIT_ROLE_PLAY_DEFAULT_PAIRS: Pair[] = [
+  { id: "1", label: "What festivals do you like?", answer: "festivals" },
+  { id: "2", label: "What do you eat?", answer: "eat" },
+  { id: "3", label: "I like the the Spring Festival.", answer: "Spring Festival" },
+  { id: "4", label: "I eat dumplings.", answer: "dumplings" },
+];
 const GROUP_WORK_LEGACY_SENTENCES = new Set([
   "These green branches have some beautiful red apples.",
   "The clever monkey jumps over the river branches.",
   "We must brush our teeth every morning.",
+]);
+const GENERIC_DEFAULT_LABELS = new Set([
+  ...FOLLOW_DEFAULT_PAIRS.map((pair) => pair.label),
+  ...DEFAULT_PAIRS.map((pair) => pair.label),
+  ...GROUP_WORK_DEFAULT_PAIRS.map((pair) => pair.label),
+  ...ROLE_PLAY_DEFAULT_PAIRS.map((pair) => pair.label),
 ]);
 const REMOVED_STORAGE_KEYS = ["match-master-stars-v1", "group-work-stars-v1"] as const;
 
@@ -453,6 +517,82 @@ const WORKSPACES: WorkspaceConfig[] = [
     sentenceEditorHelpText: "Edit the left and right sentence columns shown on the Role play page.",
   },
 ];
+
+function getUnitScopedStorageKey(unitId: string, storageKey: string) {
+  return `${unitId}:${storageKey}`;
+}
+
+function getUnitWorkspaceOverrides(
+  workspaceId: WorkspaceConfig["id"],
+  unitId: string,
+): Partial<ActivityWorkspaceConfig> {
+  const isTimeUnit = unitId === "4b-m3u2-time";
+  const isFestivalsUnit = unitId === "4b-m4u2-festivals-in-china";
+  const version = isTimeUnit ? "time-unit-5" : isFestivalsUnit ? "festivals-unit-6" : undefined;
+  if (!version) return {};
+
+  if (workspaceId === "follow-work") {
+    return {
+      defaultPairs: isTimeUnit
+        ? TIME_UNIT_FOLLOW_DEFAULT_PAIRS
+        : FESTIVALS_UNIT_FOLLOW_DEFAULT_PAIRS,
+      pairsDefaultVersionKey: FOLLOW_PAIRS_DEFAULT_VERSION_KEY,
+      pairsDefaultVersion: version,
+    };
+  }
+
+  if (workspaceId === "match-master") {
+    return {
+      defaultPairs: isTimeUnit ? TIME_UNIT_MATCH_DEFAULT_PAIRS : FESTIVALS_UNIT_MATCH_DEFAULT_PAIRS,
+      pairsDefaultVersionKey: "tree-match-pairs-default-version",
+      pairsDefaultVersion: version,
+    };
+  }
+
+  if (workspaceId === "group-work") {
+    return {
+      defaultPairs: isTimeUnit ? TIME_UNIT_READ_DEFAULT_PAIRS : FESTIVALS_UNIT_READ_DEFAULT_PAIRS,
+      pairsDefaultVersionKey: "group-work-pairs-default-version",
+      pairsDefaultVersion: version,
+    };
+  }
+
+  if (workspaceId === "role-play-work") {
+    return {
+      defaultPairs: isTimeUnit
+        ? TIME_UNIT_ROLE_PLAY_DEFAULT_PAIRS
+        : FESTIVALS_UNIT_ROLE_PLAY_DEFAULT_PAIRS,
+      fixedPairCount: 4,
+      pairsDefaultVersionKey: ROLE_PLAY_PAIRS_DEFAULT_VERSION_KEY,
+      pairsDefaultVersion: version,
+    };
+  }
+
+  return {};
+}
+
+function scopeWorkspaceForUnit(workspace: WorkspaceConfig, unitId: string): WorkspaceConfig {
+  if (workspace.view !== "activity") return workspace;
+
+  const unitOverrides = getUnitWorkspaceOverrides(workspace.id, unitId);
+
+  return {
+    ...workspace,
+    ...unitOverrides,
+    storageKey: getUnitScopedStorageKey(unitId, workspace.storageKey),
+    imageKeys: workspace.imageKeys.map((imageKey) => getUnitScopedStorageKey(unitId, imageKey)),
+    titleKey: getUnitScopedStorageKey(unitId, workspace.titleKey),
+    timerKey: getUnitScopedStorageKey(unitId, workspace.timerKey),
+    timerDefaultVersionKey: getUnitScopedStorageKey(unitId, workspace.timerDefaultVersionKey),
+    pairsDefaultVersionKey:
+      (unitOverrides.pairsDefaultVersionKey ?? workspace.pairsDefaultVersionKey)
+        ? getUnitScopedStorageKey(
+            unitId,
+            unitOverrides.pairsDefaultVersionKey ?? workspace.pairsDefaultVersionKey ?? "",
+          )
+        : undefined,
+  };
+}
 
 type AudioContextWindow = Window &
   typeof globalThis & {
@@ -640,8 +780,10 @@ function usePairs(
 ) {
   const [pairs, setPairs] = useState<Pair[]>(defaultPairs);
   const [isLoaded, setIsLoaded] = useState(false);
+  const loadedStorageKeyRef = useRef<string | null>(null);
   useEffect(() => {
     setIsLoaded(false);
+    loadedStorageKeyRef.current = null;
     try {
       const raw = localStorage.getItem(storageKey);
       const savedVersion = defaultVersionKey ? localStorage.getItem(defaultVersionKey) : undefined;
@@ -649,9 +791,14 @@ function usePairs(
       const hasLegacyPairs = savedPairs?.some((pair) =>
         GROUP_WORK_LEGACY_SENTENCES.has(pair.label),
       );
+      const hasGenericDefaultPairs =
+        defaultVersion?.includes("unit") &&
+        savedPairs?.some((pair) => GENERIC_DEFAULT_LABELS.has(pair.label));
       const shouldUseDefaultPairs =
         Boolean(defaultVersionKey && defaultVersion) &&
-        (savedVersion !== defaultVersion || Boolean(hasLegacyPairs));
+        (savedVersion !== defaultVersion ||
+          Boolean(hasLegacyPairs) ||
+          Boolean(hasGenericDefaultPairs));
       setPairs(shouldUseDefaultPairs ? defaultPairs : savedPairs || defaultPairs);
       if (defaultVersionKey && defaultVersion) {
         localStorage.setItem(defaultVersionKey, defaultVersion);
@@ -659,10 +806,11 @@ function usePairs(
     } catch (error) {
       void error;
     }
+    loadedStorageKeyRef.current = storageKey;
     setIsLoaded(true);
   }, [defaultPairs, defaultVersion, defaultVersionKey, storageKey]);
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || loadedStorageKeyRef.current !== storageKey) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(pairs));
     } catch (error) {
@@ -675,7 +823,17 @@ function usePairs(
 function Index() {
   const [tab, setTab] = useState<"home" | "settings">("home");
   const [workspaceId, setWorkspaceId] = useState<WorkspaceConfig["id"]>(DEFAULT_WORKSPACE_ID);
-  const workspace = WORKSPACES.find((item) => item.id === workspaceId) ?? WORKSPACES[0];
+  const [unitId, setUnitId] = useStoredChoice(
+    UNIT_STORAGE_KEY,
+    DEFAULT_LEARNING_UNIT_ID,
+    LEARNING_UNIT_IDS,
+  );
+  const selectedUnit = LEARNING_UNITS.find((unit) => unit.id === unitId) ?? LEARNING_UNITS[0];
+  const baseWorkspace = WORKSPACES.find((item) => item.id === workspaceId) ?? WORKSPACES[0];
+  const workspace = useMemo(
+    () => scopeWorkspaceForUnit(baseWorkspace, selectedUnit.id),
+    [baseWorkspace, selectedUnit.id],
+  );
 
   useEffect(() => {
     try {
@@ -739,9 +897,20 @@ function Index() {
 
   return (
     <div className="min-h-screen lg:flex" style={{ backgroundColor: "#fcf9f2" }}>
-      <WorkspaceMenu activeWorkspaceId={workspace.id} onSelectWorkspace={selectWorkspace} />
+      <WorkspaceMenu
+        activeWorkspaceId={workspace.id}
+        selectedUnitId={selectedUnit.id}
+        onSelectUnit={setUnitId}
+        onSelectWorkspace={selectWorkspace}
+      />
       <div className="min-w-0 flex-1">
-        <WorkspacePage key={workspace.id} workspace={workspace} tab={tab} setTab={setTab} />
+        <WorkspacePage
+          key={`${selectedUnit.id}:${workspace.id}`}
+          workspace={workspace}
+          unitId={selectedUnit.id}
+          tab={tab}
+          setTab={setTab}
+        />
       </div>
     </div>
   );
@@ -749,10 +918,12 @@ function Index() {
 
 function WorkspacePage({
   workspace,
+  unitId,
   tab,
   setTab,
 }: {
   workspace: WorkspaceConfig;
+  unitId: string;
   tab: "home" | "settings";
   setTab: React.Dispatch<React.SetStateAction<"home" | "settings">>;
 }) {
@@ -776,11 +947,20 @@ function WorkspacePage({
     );
   }
 
+  const unitOverrides = getUnitWorkspaceOverrides(workspace.id, unitId);
+  const effectiveDefaultPairs = unitOverrides.defaultPairs ?? workspace.defaultPairs;
+  const effectiveFixedPairCount = unitOverrides.fixedPairCount ?? workspace.fixedPairCount;
+  const effectivePairsDefaultVersionKey = unitOverrides.pairsDefaultVersionKey
+    ? getUnitScopedStorageKey(unitId, unitOverrides.pairsDefaultVersionKey)
+    : workspace.pairsDefaultVersionKey;
+  const effectivePairsDefaultVersion =
+    unitOverrides.pairsDefaultVersion ?? workspace.pairsDefaultVersion;
+
   const [pairs, setPairs] = usePairs(
     workspace.storageKey,
-    workspace.defaultPairs,
-    workspace.pairsDefaultVersionKey,
-    workspace.pairsDefaultVersion,
+    effectiveDefaultPairs,
+    effectivePairsDefaultVersionKey,
+    effectivePairsDefaultVersion,
   );
   const [images, setImages] = useImages(workspace.imageKeys);
   const [title, setTitle] = useTitle(
@@ -796,19 +976,19 @@ function WorkspacePage({
     workspace.legacyTimerDefaults,
   );
   const [leftRole, setLeftRole] = useStoredChoice(
-    ROLE_PLAY_LEFT_ROLE_KEY,
+    getUnitScopedStorageKey(unitId, ROLE_PLAY_LEFT_ROLE_KEY),
     ROLE_PLAY_DEFAULT_LEFT_ROLE,
     ROLE_PLAY_ROLE_NAMES,
   );
   const [rightRole, setRightRole] = useStoredChoice(
-    ROLE_PLAY_RIGHT_ROLE_KEY,
+    getUnitScopedStorageKey(unitId, ROLE_PLAY_RIGHT_ROLE_KEY),
     ROLE_PLAY_DEFAULT_RIGHT_ROLE,
     ROLE_PLAY_ROLE_NAMES,
   );
 
   useEffect(() => {
     const targetCount =
-      workspace.imageLayout === "row4" ? workspace.imageKeys.length : workspace.fixedPairCount;
+      workspace.imageLayout === "row4" ? workspace.imageKeys.length : effectiveFixedPairCount;
     if (!targetCount) return;
 
     setPairs((current) => {
@@ -818,7 +998,7 @@ function WorkspacePage({
       }
 
       const additions = Array.from({ length: targetCount - trimmed.length }, (_, index) => {
-        const fallbackPair = workspace.defaultPairs[trimmed.length + index];
+        const fallbackPair = effectiveDefaultPairs[trimmed.length + index];
         return fallbackPair
           ? { ...fallbackPair }
           : {
@@ -832,8 +1012,8 @@ function WorkspacePage({
     });
   }, [
     setPairs,
-    workspace.defaultPairs,
-    workspace.fixedPairCount,
+    effectiveDefaultPairs,
+    effectiveFixedPairCount,
     workspace.id,
     workspace.imageKeys.length,
     workspace.imageLayout,
@@ -881,7 +1061,7 @@ function WorkspacePage({
             timerSettings={timerSettings}
             setTimerSettings={setTimerSettings}
             sentenceColumns={workspace.sentenceColumns}
-            fixedPairCount={workspace.fixedPairCount}
+            fixedPairCount={effectiveFixedPairCount}
             showAnswerFields={workspace.showAnswerTiles}
             sentenceEditorHelpText={workspace.sentenceEditorHelpText}
           />
@@ -978,11 +1158,7 @@ function RolePlayRoleSelector({
       <div className="pointer-events-none absolute -right-5 top-8 h-20 w-20 rounded-full bg-orange-200/25 blur-2xl" />
       <div className="relative z-10 mb-4 flex justify-center">
         <span className="relative flex h-20 w-20 overflow-hidden rounded-full border-[4px] border-amber-50 bg-white shadow-[0_0_0_6px_rgba(252,225,170,0.42),0_16px_30px_rgba(170,126,54,0.18)]">
-          <img
-            src={avatarSrc}
-            alt="Role avatar"
-            className="h-full w-full object-cover"
-          />
+          <img src={avatarSrc} alt="Role avatar" className="h-full w-full object-cover" />
         </span>
       </div>
     </button>
@@ -991,41 +1167,63 @@ function RolePlayRoleSelector({
 
 function WorkspaceMenu({
   activeWorkspaceId,
+  selectedUnitId,
+  onSelectUnit,
   onSelectWorkspace,
 }: {
   activeWorkspaceId: WorkspaceConfig["id"];
+  selectedUnitId: string;
+  onSelectUnit: React.Dispatch<React.SetStateAction<string>>;
   onSelectWorkspace: (id: WorkspaceConfig["id"]) => void;
 }) {
   return (
     <aside className="border-b border-amber-100/80 bg-transparent lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r">
       <div className="px-4 py-4 lg:px-4 lg:py-6">
-        <div className="rounded-[28px] border border-amber-100/80 bg-white/55 p-4 shadow-[0_12px_30px_rgba(148,101,24,0.06)] backdrop-blur-sm">
-          <nav className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-            {WORKSPACES.map((workspace) => {
-              const active = workspace.id === activeWorkspaceId;
-              return (
-                <button
-                  key={workspace.id}
-                  type="button"
-                  onClick={() => onSelectWorkspace(workspace.id)}
-                  className={`rounded-[22px] border px-4 py-3 text-left text-sm font-semibold transition ${
-                    active
-                      ? "border-slate-900 bg-slate-900 text-white shadow-[0_12px_20px_rgba(15,23,42,0.14)]"
-                      : "border-amber-100 bg-white/80 text-slate-700 shadow-sm hover:border-amber-300 hover:bg-amber-50/80 hover:text-slate-950"
-                  }`}
-                >
-                  <span
-                    className={`block text-[11px] uppercase tracking-[0.24em] ${
-                      active ? "text-white/55" : "text-amber-700/60"
+        <div className="space-y-4">
+          <label className="block rounded-[28px] border border-amber-100/80 bg-white/65 p-4 shadow-[0_12px_30px_rgba(148,101,24,0.06)] backdrop-blur-sm">
+            <span className="mb-2 block px-1 text-[11px] font-bold uppercase tracking-[0.22em] text-amber-700/70">
+              Unit
+            </span>
+            <select
+              value={selectedUnitId}
+              onChange={(event) => onSelectUnit(event.currentTarget.value)}
+              className="h-auto min-h-12 w-full rounded-2xl border border-amber-100 bg-white/90 px-4 py-3 pr-8 text-sm font-bold leading-snug text-slate-800 shadow-sm outline-none transition hover:border-amber-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+            >
+              {LEARNING_UNITS.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-[28px] border border-amber-100/80 bg-white/55 p-4 shadow-[0_12px_30px_rgba(148,101,24,0.06)] backdrop-blur-sm">
+            <nav className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              {WORKSPACES.map((workspace) => {
+                const active = workspace.id === activeWorkspaceId;
+                return (
+                  <button
+                    key={workspace.id}
+                    type="button"
+                    onClick={() => onSelectWorkspace(workspace.id)}
+                    className={`rounded-[22px] border px-4 py-3 text-left text-sm font-semibold transition ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white shadow-[0_12px_20px_rgba(15,23,42,0.14)]"
+                        : "border-amber-100 bg-white/80 text-slate-700 shadow-sm hover:border-amber-300 hover:bg-amber-50/80 hover:text-slate-950"
                     }`}
                   >
-                    {String(WORKSPACES.indexOf(workspace) + 1).padStart(2, "0")}
-                  </span>
-                  <span className="mt-1 block text-base">{workspace.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+                    <span
+                      className={`block text-[11px] uppercase tracking-[0.24em] ${
+                        active ? "text-white/55" : "text-amber-700/60"
+                      }`}
+                    >
+                      {String(WORKSPACES.indexOf(workspace) + 1).padStart(2, "0")}
+                    </span>
+                    <span className="mt-1 block text-base">{workspace.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
       </div>
     </aside>
@@ -1764,10 +1962,7 @@ function GameView({
       setSpeakingRolePairId(pairId);
       const clearRoleSpeaker = () => {
         if (roleSpeechTokenRef.current !== token) return;
-        const remainingMs = Math.max(
-          0,
-          ROLE_SPEAKER_MIN_VISIBLE_MS - (Date.now() - startedAt),
-        );
+        const remainingMs = Math.max(0, ROLE_SPEAKER_MIN_VISIBLE_MS - (Date.now() - startedAt));
         if (remainingMs > 0) {
           roleSpeakerTimeoutRef.current = window.setTimeout(() => {
             if (roleSpeechTokenRef.current !== token) return;
@@ -1817,6 +2012,21 @@ function GameView({
         ]
       : [pairs];
   const showRoleSelectors = sentenceColumns === 2 && Boolean(roleSelection);
+  const rolePlaySentenceRows = showRoleSelectors
+    ? Array.from({
+        length: Math.max(
+          sentencePairsByColumn[0]?.length ?? 0,
+          sentencePairsByColumn[1]?.length ?? 0,
+        ),
+      }).flatMap((_, rowIndex) =>
+        [0, 1]
+          .map((columnIndex) => {
+            const pair = sentencePairsByColumn[columnIndex]?.[rowIndex];
+            return pair ? { columnIndex, pair } : null;
+          })
+          .filter((item): item is { columnIndex: number; pair: Pair } => Boolean(item)),
+      )
+    : [];
   const firstRolePlayPair = sentencePairsByColumn[0]?.[0];
   const resolvedRoleColumnIndex = activeRoleColumn;
   const activeRolePairs =
@@ -1824,8 +2034,7 @@ function GameView({
       ? (sentencePairsByColumn[resolvedRoleColumnIndex] ?? [])
       : [];
   const roleRoundComplete =
-    activeRolePairs.length > 0 &&
-    activeRolePairs.every((pair) => status[pair.id] === "correct");
+    activeRolePairs.length > 0 && activeRolePairs.every((pair) => status[pair.id] === "correct");
 
   useEffect(() => {
     if (!allCorrect && !roleRoundComplete) return;
@@ -1976,9 +2185,7 @@ function GameView({
         window.clearTimeout(roleResponseTimeoutRef.current);
         roleResponseTimeoutRef.current = null;
       }
-      setStatus((current) =>
-        current[pairId] ? { ...current, [pairId]: undefined } : current,
-      );
+      setStatus((current) => (current[pairId] ? { ...current, [pairId]: undefined } : current));
 
       if (selectedPairId === pairId) {
         speakingPractice.toggleScoring();
@@ -2119,23 +2326,13 @@ function GameView({
           )}
         </div>
 
-        {showPairBoard && (
-          <div
-            className={`flex-1 ${
-              sentenceColumns === 2 ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"
-            }`}
-          >
-            {sentencePairsByColumn.map((columnPairs, columnIndex) => (
-              <div
-                key={`sentence-column-${columnIndex}`}
-                className={
-                  sentenceColumns === 2
-                    ? "flex flex-col gap-3"
-                    : `flex flex-col gap-3 ${showDropTargets ? "justify-between" : ""}`
-                }
-              >
-                {showRoleSelectors && roleSelection && (
+        {showPairBoard &&
+          (showRoleSelectors && roleSelection ? (
+            <div className="flex-1">
+              <div className="mb-4 grid grid-cols-2 gap-4">
+                {[0, 1].map((columnIndex) => (
                   <RolePlayRoleSelector
+                    key={`role-selector-${columnIndex}`}
                     selectedRole={
                       columnIndex === 0 ? roleSelection.leftRole : roleSelection.rightRole
                     }
@@ -2147,117 +2344,202 @@ function GameView({
                     isActive={activeRoleColumn === columnIndex}
                     onActivate={() => activateRoleColumn(columnIndex)}
                   />
-                )}
+                ))}
+              </div>
+              <div className="flex flex-col gap-4">
+                {rolePlaySentenceRows.map(({ pair: p, columnIndex }) => {
+                  const labelSelected = selectedPairId === p.id;
+                  const isRoleSentenceSpeaking = speakingRolePairId === p.id;
+                  const roleSentenceStatus = status[p.id];
+                  const showRoleMicButton =
+                    resolvedRoleColumnIndex === columnIndex && labelSelected;
+                  const isSentenceListening =
+                    showRoleMicButton && labelSelected && speakingPractice.isListening;
+                  const labelColorClass =
+                    roleSentenceStatus === "correct"
+                      ? "border-green-500 bg-green-50 text-green-800 shadow-sm"
+                      : roleSentenceStatus === "wrong"
+                        ? "border-red-400 bg-red-50 text-red-700 shadow-sm"
+                        : labelSelected
+                          ? "border-amber-500 bg-amber-100 text-slate-800 shadow-sm"
+                          : "border-slate-700 bg-white text-slate-800";
+                  const labelBoxClassName = `min-h-16 w-full max-w-[620px] rounded-md border-2 px-4 py-3 text-left text-2xl font-bold leading-snug transition ${labelColorClass} cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400`;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex min-h-[76px] items-center gap-3 ${
+                        columnIndex === 0
+                          ? "justify-start pr-[24%] max-md:pr-0"
+                          : "justify-end pl-[24%] max-md:pl-0"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={labelSelected}
+                        onClick={() => toggleLabelBox(p.id, columnIndex)}
+                        className={labelBoxClassName}
+                      >
+                        <span className="block w-full leading-snug">
+                          {p.label}
+                          {isRoleSentenceSpeaking && (
+                            <span
+                              aria-hidden="true"
+                              className="relative ml-2 inline-flex h-5 w-5 items-center justify-center align-middle"
+                            >
+                              <span className="absolute inset-0 rounded-full bg-amber-300/60 animate-ping" />
+                              <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-amber-600">
+                                <Volume2 size={14} />
+                              </span>
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                      {showRoleMicButton && (
+                        <button
+                          type="button"
+                          aria-label={`Start pronunciation check for ${p.label}`}
+                          onClick={() => startRolePractice(p.id, columnIndex)}
+                          className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                            isSentenceListening
+                              ? "border-rose-300 bg-rose-500 text-white shadow-[0_10px_20px_rgba(244,63,94,0.2)]"
+                              : "border-amber-200 bg-white text-amber-600 shadow-sm hover:border-amber-300 hover:bg-amber-50"
+                          }`}
+                        >
+                          {isSentenceListening ? <Square size={16} /> : <Mic size={18} />}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`flex-1 ${
+                sentenceColumns === 2 ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"
+              }`}
+            >
+              {sentencePairsByColumn.map((columnPairs, columnIndex) => (
                 <div
+                  key={`sentence-column-${columnIndex}`}
                   className={
-                    sentenceColumns === 2 ? "grid auto-rows-fr gap-3" : "flex flex-col gap-3"
+                    sentenceColumns === 2
+                      ? "flex flex-col gap-3"
+                      : `flex flex-col gap-3 ${showDropTargets ? "justify-between" : ""}`
                   }
                 >
-                  {columnPairs.map((p) => {
-                    const labelSelected = selectedPairId === p.id;
-                    const isRoleSentenceSpeaking =
-                      showRoleSelectors && speakingRolePairId === p.id;
-                    const roleSentenceStatus = showRoleSelectors ? status[p.id] : undefined;
-                    const showRoleMicButton =
-                      showRoleSelectors &&
-                      resolvedRoleColumnIndex === columnIndex &&
-                      labelSelected;
-                    const isSentenceListening =
-                      showRoleMicButton && labelSelected && speakingPractice.isListening;
-                    const labelColorClass =
-                      roleSentenceStatus === "correct"
-                        ? "border-green-500 bg-green-50 text-green-800 shadow-sm"
-                        : roleSentenceStatus === "wrong"
-                          ? "border-red-400 bg-red-50 text-red-700 shadow-sm"
-                          : labelSelected
-                            ? "border-amber-500 bg-amber-100 text-slate-800 shadow-sm"
-                            : "border-slate-700 bg-white text-slate-800";
-                    const labelBoxClassName = `border-2 rounded-md px-4 font-bold flex items-center transition ${labelColorClass} ${
-                      showDropTargets
-                        ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
-                        : `min-h-16 w-full py-3 text-left leading-snug ${
-                            showTargetSentence ? "h-full text-2xl" : "max-w-[560px]"
-                          }`
-                    } ${
-                      labelBoxesClickable
-                        ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                        : ""
-                    }`;
+                  <div
+                    className={
+                      sentenceColumns === 2 ? "grid auto-rows-fr gap-3" : "flex flex-col gap-3"
+                    }
+                  >
+                    {columnPairs.map((p) => {
+                      const labelSelected = selectedPairId === p.id;
+                      const isRoleSentenceSpeaking =
+                        showRoleSelectors && speakingRolePairId === p.id;
+                      const roleSentenceStatus = showRoleSelectors ? status[p.id] : undefined;
+                      const showRoleMicButton =
+                        showRoleSelectors &&
+                        resolvedRoleColumnIndex === columnIndex &&
+                        labelSelected;
+                      const isSentenceListening =
+                        showRoleMicButton && labelSelected && speakingPractice.isListening;
+                      const labelColorClass =
+                        roleSentenceStatus === "correct"
+                          ? "border-green-500 bg-green-50 text-green-800 shadow-sm"
+                          : roleSentenceStatus === "wrong"
+                            ? "border-red-400 bg-red-50 text-red-700 shadow-sm"
+                            : labelSelected
+                              ? "border-amber-500 bg-amber-100 text-slate-800 shadow-sm"
+                              : "border-slate-700 bg-white text-slate-800";
+                      const labelBoxClassName = `border-2 rounded-md px-4 font-bold flex items-center transition ${labelColorClass} ${
+                        showDropTargets
+                          ? `h-full ${MATCH_BOX_WIDTH_CLASS}`
+                          : `min-h-16 w-full py-3 text-left leading-snug ${
+                              showTargetSentence ? "h-full text-2xl" : "max-w-[560px]"
+                            }`
+                      } ${
+                        labelBoxesClickable
+                          ? "cursor-pointer hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                          : ""
+                      }`;
 
-                    return (
-                      <div
-                        key={p.id}
-                        className={`flex items-center gap-3 ${
-                          showDropTargets || showTargetSentence ? "flex-1" : ""
-                        }`}
-                      >
-                        {labelBoxesClickable ? (
-                          <button
-                            type="button"
-                            aria-pressed={labelSelected}
-                            onClick={() => toggleLabelBox(p.id, columnIndex)}
-                            className={labelBoxClassName}
-                          >
-                            <span className="block w-full leading-snug">
-                              {p.label}
-                              {isRoleSentenceSpeaking && (
-                                <span
-                                  aria-hidden="true"
-                                  className="relative ml-2 inline-flex h-5 w-5 items-center justify-center align-middle"
-                                >
-                                  <span className="absolute inset-0 rounded-full bg-amber-300/60 animate-ping" />
-                                  <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-amber-600">
-                                    <Volume2 size={14} />
+                      return (
+                        <div
+                          key={p.id}
+                          className={`flex items-center gap-3 ${
+                            showDropTargets || showTargetSentence ? "flex-1" : ""
+                          }`}
+                        >
+                          {labelBoxesClickable ? (
+                            <button
+                              type="button"
+                              aria-pressed={labelSelected}
+                              onClick={() => toggleLabelBox(p.id, columnIndex)}
+                              className={labelBoxClassName}
+                            >
+                              <span className="block w-full leading-snug">
+                                {p.label}
+                                {isRoleSentenceSpeaking && (
+                                  <span
+                                    aria-hidden="true"
+                                    className="relative ml-2 inline-flex h-5 w-5 items-center justify-center align-middle"
+                                  >
+                                    <span className="absolute inset-0 rounded-full bg-amber-300/60 animate-ping" />
+                                    <span className="relative inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-amber-600">
+                                      <Volume2 size={14} />
+                                    </span>
                                   </span>
-                                </span>
-                              )}
-                            </span>
-                          </button>
-                        ) : (
-                          <div className={labelBoxClassName}>{p.label}</div>
-                        )}
-                        {showRoleMicButton && (
-                          <button
-                            type="button"
-                            aria-label={`Start pronunciation check for ${p.label}`}
-                            onClick={() => startRolePractice(p.id, columnIndex)}
-                            className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-                              isSentenceListening
-                                ? "border-rose-300 bg-rose-500 text-white shadow-[0_10px_20px_rgba(244,63,94,0.2)]"
-                                : "border-amber-200 bg-white text-amber-600 shadow-sm hover:border-amber-300 hover:bg-amber-50"
-                            }`}
-                          >
-                            {isSentenceListening ? <Square size={16} /> : <Mic size={18} />}
-                          </button>
-                        )}
-                        {showDropTargets && (
-                          <>
-                            <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
-                            <DropZone
-                              pairId={p.id}
-                              status={status[p.id]}
-                              value={placed[p.id]}
-                              isPointerOver={activeDropZoneId === p.id}
-                              onDrop={(ans) => onDrop(p.id, ans)}
-                            />
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
+                                )}
+                              </span>
+                            </button>
+                          ) : (
+                            <div className={labelBoxClassName}>{p.label}</div>
+                          )}
+                          {showRoleMicButton && (
+                            <button
+                              type="button"
+                              aria-label={`Start pronunciation check for ${p.label}`}
+                              onClick={() => startRolePractice(p.id, columnIndex)}
+                              className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                                isSentenceListening
+                                  ? "border-rose-300 bg-rose-500 text-white shadow-[0_10px_20px_rgba(244,63,94,0.2)]"
+                                  : "border-amber-200 bg-white text-amber-600 shadow-sm hover:border-amber-300 hover:bg-amber-50"
+                              }`}
+                            >
+                              {isSentenceListening ? <Square size={16} /> : <Mic size={18} />}
+                            </button>
+                          )}
+                          {showDropTargets && (
+                            <>
+                              <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
+                              <DropZone
+                                pairId={p.id}
+                                status={status[p.id]}
+                                value={placed[p.id]}
+                                isPointerOver={activeDropZoneId === p.id}
+                                onDrop={(ans) => onDrop(p.id, ans)}
+                              />
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          ))}
       </div>
 
       {showTargetSentence && selectedSentence && !showRoleSelectors && (
         <SpeakingPracticePanel targetSentence={selectedSentence} practice={speakingPractice} />
       )}
 
-      {showTargetSentence && showRoleSelectors && (
-        selectedSentence && resolvedRoleColumnIndex != null ? (
+      {showTargetSentence &&
+        showRoleSelectors &&
+        (selectedSentence && resolvedRoleColumnIndex != null ? (
           <SpeakingPracticePanel
             targetSentence={selectedSentence}
             practice={speakingPractice}
@@ -2293,8 +2575,7 @@ function GameView({
               </p>
             </div>
           </section>
-        )
-      )}
+        ))}
 
       {showAnswerTiles && (
         <div className="flex flex-wrap gap-3 mt-8 justify-center">
@@ -2380,7 +2661,9 @@ function SpeakingPracticePanel({
             </p>
             <p className="mt-1 text-2xl font-bold leading-tight text-slate-900">{targetSentence}</p>
           </div>
-          <div className={showPrimaryButton ? "justify-self-center text-center" : "justify-self-end"}>
+          <div
+            className={showPrimaryButton ? "justify-self-center text-center" : "justify-self-end"}
+          >
             {showPrimaryButton ? (
               <button
                 type="button"
@@ -2400,7 +2683,10 @@ function SpeakingPracticePanel({
           </div>
           {showPrimaryButton && <div aria-hidden="true" />}
         </div>
-        {(practice.transcript || practice.scoreResult || practice.errorMessage || auxiliaryActions) && (
+        {(practice.transcript ||
+          practice.scoreResult ||
+          practice.errorMessage ||
+          auxiliaryActions) && (
           <div className="mx-auto mt-6 max-w-3xl space-y-3 text-left">
             {practice.transcript && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
