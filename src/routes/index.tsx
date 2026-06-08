@@ -18,10 +18,24 @@ import {
 import confettiAnimation from "@/assets/confetti-full-screen.json";
 import correctSound from "@/assets/correct.wav";
 import defaultTreeImage from "@/assets/default-tree.png";
+import festivalsFollowImage1 from "@/assets/festivals-follow-1.jpg";
+import festivalsFollowImage2 from "@/assets/festivals-follow-2.jpg";
+import festivalsFollowImage3 from "@/assets/festivals-follow-3.jpg";
+import festivalsFollowImage4 from "@/assets/festivals-follow-4.jpg";
+import festivalsMatchImage from "@/assets/festivals-match.png";
+import festivalsReadImage from "@/assets/festivals-read.jpg";
+import festivalsRolePlayImage from "@/assets/festivals-role-play.jpg";
 import followBrushTeethAudio from "@/assets/follow-audio/brush-teeth.m4a";
 import followGetUpAudio from "@/assets/follow-audio/get-up.m4a";
 import followGoToSchoolAudio from "@/assets/follow-audio/go-to-school.m4a";
 import followWashFaceAudio from "@/assets/follow-audio/wash-face.m4a";
+import timeFollowImage1 from "@/assets/time-follow-1.jpg";
+import timeFollowImage2 from "@/assets/time-follow-2.jpg";
+import timeFollowImage3 from "@/assets/time-follow-3.jpg";
+import timeFollowImage4 from "@/assets/time-follow-4.jpg";
+import timeMatchMorningImage from "@/assets/time-match-morning.jpg";
+import timeReadMorningImage from "@/assets/time-read-morning.jpg";
+import timeRolePlayImage from "@/assets/time-role-play.jpg";
 import tryAgainSound from "@/assets/try-again.wav";
 import victorySound from "@/assets/victory.mp3";
 
@@ -122,6 +136,7 @@ type ActivityWorkspaceConfig = WorkspaceBaseConfig & {
   timerDefault: TimerSettings;
   legacyTimerDefaults: TimerSettings[];
   defaultPairs: Pair[];
+  defaultImages?: readonly string[];
   fixedPairCount?: number;
   legacyTitleMap?: Record<string, string>;
   pairsDefaultVersionKey?: string;
@@ -259,7 +274,7 @@ const CELEBRATION_PLAYBACK_SPEED =
 const ROLE_SPEAKER_MIN_VISIBLE_MS = 700;
 const ROLE_RESPONSE_PLAY_DELAY_MS = 480;
 const APP_FRAME_MAX_WIDTH_CLASS = "max-w-[1124px]";
-const MATCH_BOX_WIDTH_CLASS = "w-[170px] md:w-[186px]";
+const MATCH_BOX_WIDTH_CLASS = "w-[142px] md:w-[164px]";
 
 const DEFAULT_PAIRS: Pair[] = [
   { id: "1", label: "flowers", answer: "pink" },
@@ -281,6 +296,18 @@ const TIME_UNIT_FOLLOW_DEFAULT_PAIRS: Pair[] = [
   { id: "3", label: "half past seven", answer: "half past seven" },
   { id: "4", label: "a quarter to eight", answer: "a quarter to eight" },
 ];
+const TIME_UNIT_FOLLOW_DEFAULT_IMAGES = [
+  timeFollowImage1,
+  timeFollowImage2,
+  timeFollowImage3,
+  timeFollowImage4,
+] as const;
+const FESTIVALS_UNIT_FOLLOW_DEFAULT_IMAGES = [
+  festivalsFollowImage1,
+  festivalsFollowImage2,
+  festivalsFollowImage3,
+  festivalsFollowImage4,
+] as const;
 const FOLLOW_AUDIO_BY_LABEL: Record<string, string> = {
   "get up": followGetUpAudio,
   "wash face": followWashFaceAudio,
@@ -536,6 +563,9 @@ function getUnitWorkspaceOverrides(
       defaultPairs: isTimeUnit
         ? TIME_UNIT_FOLLOW_DEFAULT_PAIRS
         : FESTIVALS_UNIT_FOLLOW_DEFAULT_PAIRS,
+      defaultImages: isTimeUnit
+        ? TIME_UNIT_FOLLOW_DEFAULT_IMAGES
+        : FESTIVALS_UNIT_FOLLOW_DEFAULT_IMAGES,
       pairsDefaultVersionKey: FOLLOW_PAIRS_DEFAULT_VERSION_KEY,
       pairsDefaultVersion: version,
     };
@@ -544,6 +574,7 @@ function getUnitWorkspaceOverrides(
   if (workspaceId === "match-master") {
     return {
       defaultPairs: isTimeUnit ? TIME_UNIT_MATCH_DEFAULT_PAIRS : FESTIVALS_UNIT_MATCH_DEFAULT_PAIRS,
+      defaultImages: isTimeUnit ? [timeMatchMorningImage] : [festivalsMatchImage],
       pairsDefaultVersionKey: "tree-match-pairs-default-version",
       pairsDefaultVersion: version,
     };
@@ -552,6 +583,7 @@ function getUnitWorkspaceOverrides(
   if (workspaceId === "group-work") {
     return {
       defaultPairs: isTimeUnit ? TIME_UNIT_READ_DEFAULT_PAIRS : FESTIVALS_UNIT_READ_DEFAULT_PAIRS,
+      defaultImages: isTimeUnit ? [timeReadMorningImage] : [festivalsReadImage],
       pairsDefaultVersionKey: "group-work-pairs-default-version",
       pairsDefaultVersion: version,
     };
@@ -562,6 +594,7 @@ function getUnitWorkspaceOverrides(
       defaultPairs: isTimeUnit
         ? TIME_UNIT_ROLE_PLAY_DEFAULT_PAIRS
         : FESTIVALS_UNIT_ROLE_PLAY_DEFAULT_PAIRS,
+      defaultImages: isTimeUnit ? [timeRolePlayImage] : [festivalsRolePlayImage],
       fixedPairCount: 4,
       pairsDefaultVersionKey: ROLE_PLAY_PAIRS_DEFAULT_VERSION_KEY,
       pairsDefaultVersion: version,
@@ -667,33 +700,47 @@ function useStoredChoice(storageKey: string, defaultValue: string, validValues: 
   return [value, setValue] as const;
 }
 
-function useImages(storageKeys: readonly string[]) {
-  const [images, setImages] = useState<string[]>(() => storageKeys.map(() => DEFAULT_IMAGE));
+function useImages(storageKeys: readonly string[], defaultImages?: readonly string[]) {
+  const getDefaultImageAt = useCallback(
+    (index: number) => defaultImages?.[index] ?? DEFAULT_IMAGE,
+    [defaultImages],
+  );
+  const [images, setImages] = useState<string[]>(() =>
+    storageKeys.map((_, index) => getDefaultImageAt(index)),
+  );
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     setIsLoaded(false);
     try {
-      setImages(storageKeys.map((storageKey) => localStorage.getItem(storageKey) || DEFAULT_IMAGE));
+      setImages(
+        storageKeys.map((storageKey, index) => {
+          const storedImage = localStorage.getItem(storageKey);
+          return storedImage && storedImage !== DEFAULT_IMAGE
+            ? storedImage
+            : getDefaultImageAt(index);
+        }),
+      );
     } catch (error) {
       void error;
-      setImages(storageKeys.map(() => DEFAULT_IMAGE));
+      setImages(storageKeys.map((_, index) => getDefaultImageAt(index)));
     }
     setIsLoaded(true);
-  }, [storageKeys]);
+  }, [getDefaultImageAt, storageKeys]);
 
   useEffect(() => {
     if (!isLoaded) return;
     try {
       storageKeys.forEach((storageKey, index) => {
-        const image = images[index] || DEFAULT_IMAGE;
-        if (image && image !== DEFAULT_IMAGE) localStorage.setItem(storageKey, image);
+        const defaultImage = getDefaultImageAt(index);
+        const image = images[index] || defaultImage;
+        if (image && image !== defaultImage) localStorage.setItem(storageKey, image);
         else localStorage.removeItem(storageKey);
       });
     } catch (error) {
       void error;
     }
-  }, [images, isLoaded, storageKeys]);
+  }, [getDefaultImageAt, images, isLoaded, storageKeys]);
 
   return [images, setImages] as const;
 }
@@ -949,6 +996,7 @@ function WorkspacePage({
 
   const unitOverrides = getUnitWorkspaceOverrides(workspace.id, unitId);
   const effectiveDefaultPairs = unitOverrides.defaultPairs ?? workspace.defaultPairs;
+  const effectiveDefaultImages = unitOverrides.defaultImages ?? workspace.defaultImages;
   const effectiveFixedPairCount = unitOverrides.fixedPairCount ?? workspace.fixedPairCount;
   const effectivePairsDefaultVersionKey = unitOverrides.pairsDefaultVersionKey
     ? getUnitScopedStorageKey(unitId, unitOverrides.pairsDefaultVersionKey)
@@ -962,7 +1010,7 @@ function WorkspacePage({
     effectivePairsDefaultVersionKey,
     effectivePairsDefaultVersion,
   );
-  const [images, setImages] = useImages(workspace.imageKeys);
+  const [images, setImages] = useImages(workspace.imageKeys, effectiveDefaultImages);
   const [title, setTitle] = useTitle(
     workspace.titleKey,
     workspace.defaultTitle,
@@ -1054,6 +1102,7 @@ function WorkspacePage({
             setPairs={setPairs}
             images={images}
             setImages={setImages}
+            defaultImages={effectiveDefaultImages}
             imageLayout={workspace.imageLayout}
             title={title}
             setTitle={setTitle}
@@ -2248,13 +2297,13 @@ function GameView({
 
       <div
         className={`flex rounded-2xl border bg-white/60 p-6 ${
-          showPairBoard ? "min-h-[360px] items-stretch gap-8" : "items-center justify-center"
+          showPairBoard ? "min-h-[360px] items-stretch gap-5" : "items-center justify-center"
         }`}
       >
         <div
           className={
             showPairBoard && showDropTargets
-              ? "flex h-[312px] shrink-0 items-stretch justify-center"
+              ? "flex h-[260px] w-[52%] max-w-[560px] min-w-0 shrink items-stretch justify-center"
               : `flex shrink-0 items-stretch justify-center ${
                   isMultiImageRow
                     ? "w-full"
@@ -2315,7 +2364,7 @@ function GameView({
               alt="Reference"
               className={`select-none pointer-events-none rounded-md ${
                 showPairBoard && showDropTargets
-                  ? "h-full w-auto object-contain"
+                  ? "h-full max-w-full object-contain"
                   : "max-h-[420px] w-full object-contain"
               }`}
             />
@@ -2416,7 +2465,7 @@ function GameView({
             </div>
           ) : (
             <div
-              className={`flex-1 ${
+              className={`min-w-0 flex-1 ${
                 sentenceColumns === 2 ? "grid grid-cols-2 gap-4" : "flex flex-col gap-3"
               }`}
             >
@@ -2468,7 +2517,7 @@ function GameView({
                       return (
                         <div
                           key={p.id}
-                          className={`flex items-center gap-3 ${
+                          className={`flex min-w-0 items-center gap-3 ${
                             showDropTargets || showTargetSentence ? "flex-1" : ""
                           }`}
                         >
@@ -2513,7 +2562,7 @@ function GameView({
                           )}
                           {showDropTargets && (
                             <>
-                              <div className="w-[54px] border-t-2 border-dashed border-slate-400" />
+                              <div className="w-8 shrink-0 border-t-2 border-dashed border-slate-400" />
                               <DropZone
                                 pairId={p.id}
                                 status={status[p.id]}
@@ -2907,6 +2956,7 @@ function SettingsView({
   setPairs,
   images,
   setImages,
+  defaultImages,
   imageLayout,
   title,
   setTitle,
@@ -2922,6 +2972,7 @@ function SettingsView({
   setPairs: React.Dispatch<React.SetStateAction<Pair[]>>;
   images: string[];
   setImages: React.Dispatch<React.SetStateAction<string[]>>;
+  defaultImages?: readonly string[];
   imageLayout: "single" | "row4";
   title: string;
   setTitle: React.Dispatch<React.SetStateAction<string>>;
@@ -2939,6 +2990,7 @@ function SettingsView({
   const rolePlaySplitIndex = Math.ceil((fixedPairCount ?? pairs.length) / 2);
   const rolePlayLeftPairs = pairs.slice(0, rolePlaySplitIndex);
   const rolePlayRightPairs = pairs.slice(rolePlaySplitIndex, rolePlaySplitIndex * 2);
+  const getDefaultImageAt = (index: number) => defaultImages?.[index] ?? DEFAULT_IMAGE;
 
   const update = (id: string, field: "label" | "answer", value: string) => {
     setPairs((ps) => ps.map((p) => (p.id === id ? { ...p, [field]: value } : p)));
@@ -3021,9 +3073,9 @@ function SettingsView({
                         onChange={(e) => onUpload(e.target.files?.[0], index)}
                       />
                     </label>
-                    {image && image !== DEFAULT_IMAGE && (
+                    {image && image !== getDefaultImageAt(index) && (
                       <button
-                        onClick={() => updateImageAtIndex(index, DEFAULT_IMAGE)}
+                        onClick={() => updateImageAtIndex(index, getDefaultImageAt(index))}
                         className="rounded-md px-3 py-2 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600"
                       >
                         Use default image
@@ -3074,9 +3126,9 @@ function SettingsView({
                     onChange={(e) => onUpload(e.target.files?.[0], 0)}
                   />
                 </label>
-                {images[0] && images[0] !== DEFAULT_IMAGE && (
+                {images[0] && images[0] !== getDefaultImageAt(0) && (
                   <button
-                    onClick={() => updateImageAtIndex(0, DEFAULT_IMAGE)}
+                    onClick={() => updateImageAtIndex(0, getDefaultImageAt(0))}
                     className="text-xs text-slate-500 hover:text-red-600 w-fit"
                   >
                     Use default image
