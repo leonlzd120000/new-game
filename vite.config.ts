@@ -26,6 +26,7 @@ function githubPagesServerEntryPlugin(): Plugin {
     enforce: "pre",
     writeBundle(options, bundle) {
       if (!isGitHubPagesBuild) return;
+      if (Object.values(bundle).some((item) => item.fileName === "server.js")) return;
 
       const serverChunk = Object.values(bundle).find(
         (item): item is OutputChunk =>
